@@ -159,15 +159,14 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
       return;
     }
 
-    setState(() {
-      _rutaOptima = result['ruta_optima'];
-      _rutasAlternativas = result['rutas_alternativas'] ?? [];
-      _rutaSeleccionadaIndex = -1;
-      _isRouteNotFound = false;
-      _showDashboard = true;
-      _state = MapState.showingResult;
-      _drawCurrentRoute();
-    });
+    _rutaOptima = result['ruta_optima'] as Map<String, dynamic>?;
+    _rutasAlternativas = (result['rutas_alternativas'] as List?) ?? [];
+    _rutaSeleccionadaIndex = -1;
+    _isRouteNotFound = false;
+    _showDashboard = true;
+    _state = MapState.showingResult;
+    _drawCurrentRoute(); // llena _polylines y _markers sin setState interno
+    setState(() {}); // un solo setState al final para re-pintar todo
   }
 
   void _drawCurrentRoute() {
@@ -175,32 +174,40 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
     if (_rutaSeleccionadaIndex == -1) {
       ruta = _rutaOptima!;
     } else {
-      ruta = Map<String, dynamic>.from(_rutasAlternativas[_rutaSeleccionadaIndex]);
+      ruta = _rutasAlternativas[_rutaSeleccionadaIndex] as Map<String, dynamic>;
     }
 
     List<Polyline> newPolylines = [];
     List<Marker> newMarkers = [];
 
-    // Dibujar segmentos
-    for (var seg in ruta['segmentos']) {
-      List<LatLng> points = [];
-      for (var coord in seg['coordenadas']) {
-        points.add(LatLng(coord['lat'], coord['lng']));
+    // Dibujar segmentos — siempre en morado (color de la app) sin importar el color de la linea
+    final List segmentos = (ruta['segmentos'] as List?) ?? [];
+    for (var seg in segmentos) {
+      final List rawCoords = (seg['coordenadas'] as List?) ?? [];
+      final List<LatLng> points = rawCoords
+          .map((c) => LatLng((c['lat'] as num).toDouble(), (c['lng'] as num).toDouble()))
+          .toList();
+      if (points.length >= 2) {
+        newPolylines.add(Polyline(
+          points: points,
+          strokeWidth: 7.0,
+          color: const Color(0xFF6A1B9A), // morado oscuro fijo
+        ));
       }
-      newPolylines.add(Polyline(
-        points: points,
-        strokeWidth: 6.0,
-        color: _hexToColor(seg['color']),
-      ));
     }
 
     // Dibujar marcadores de instrucciones
-    for (var inst in ruta['instrucciones']) {
+    final List instrucciones = (ruta['instrucciones'] as List?) ?? [];
+    for (var inst in instrucciones) {
+      final double? lat = (inst['lat'] as num?)?.toDouble();
+      final double? lng = (inst['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) continue;
+
       IconData icon;
       Color color;
       double size = 36;
 
-      switch (inst['tipo']) {
+      switch (inst['tipo'] as String? ?? '') {
         case 'subir':
           icon = Icons.directions_bus;
           color = Colors.green.shade700;
@@ -220,32 +227,26 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
       }
 
       newMarkers.add(Marker(
-        point: LatLng(inst['lat'], inst['lng']),
-        width: size,
-        height: size + 16,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: size),
-          ],
-        ),
+        point: LatLng(lat, lng),
+        width: size + 8,
+        height: size + 8,
+        child: Icon(icon, color: color, size: size),
       ));
     }
 
-    // Marcador de origen
+    // Marcador de origen (punto azul grande)
     if (_origen != null) {
       newMarkers.add(Marker(
         point: _origen!,
-        width: 40,
-        height: 40,
-        child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 40),
+        width: 44,
+        height: 44,
+        child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 44),
       ));
     }
 
-    setState(() {
-      _polylines = newPolylines;
-      _markers = newMarkers;
-    });
+    // Actualizar estado SIN setState anidado — aquí siempre estamos fuera de build
+    _polylines = newPolylines;
+    _markers = newMarkers;
   }
 
   void _resetToInitial() {
@@ -294,19 +295,50 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
     });
   }
 
+  // Paleta de colores para diferenciar líneas cuando la BD no tiene colores únicos
+  static const List<Color> _lineaPalette = [
+    Color(0xFFE53935), // rojo
+    Color(0xFF1E88E5), // azul
+    Color(0xFF43A047), // verde
+    Color(0xFFFF8F00), // naranja
+    Color(0xFF8E24AA), // morado
+    Color(0xFF00ACC1), // cyan
+    Color(0xFFD81B60), // rosa
+    Color(0xFF3949AB), // índigo
+    Color(0xFF00897B), // teal
+    Color(0xFFEF6C00), // naranja oscuro
+  ];
+
+  Color _getLineaColor(int index, String? hexFromDb) {
+    // Si el color de la BD es diferente del rojo por defecto, usarlo
+    if (hexFromDb != null && hexFromDb.isNotEmpty) {
+      final c = _hexToColor(hexFromDb);
+      // Solo usar el color de la BD si no es exactamente #FF0000 (rojo default sin definir)
+      if (c != const Color(0xFFFF0000)) return c;
+    }
+    // Caso contrario, usar paleta propia por índice
+    return _lineaPalette[index % _lineaPalette.length];
+  }
+
   void _rebuildLineasPolylines() {
     List<Polyline> newPolylines = [];
 
+    int paletteIndex = 0;
     for (var linea in _todasLasLineas) {
-      if (!_lineasSeleccionadas.contains(linea['id_linea'])) continue;
+      if (!_lineasSeleccionadas.contains(linea['id_linea'])) {
+        paletteIndex++;
+        continue;
+      }
 
-      Color color = _hexToColor(linea['color']);
+      Color color = _getLineaColor(paletteIndex, linea['color'] as String?);
+      paletteIndex++;
+
       for (var ruta in linea['rutas']) {
         List<LatLng> points = [];
         for (var coord in ruta['coordenadas']) {
-          points.add(LatLng(coord['lat'], coord['lng']));
+          points.add(LatLng((coord['lat'] as num).toDouble(), (coord['lng'] as num).toDouble()));
         }
-        if (points.isNotEmpty) {
+        if (points.length >= 2) {
           newPolylines.add(Polyline(
             points: points,
             strokeWidth: 5.0,
@@ -318,6 +350,7 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
 
     _polylinesLineas = newPolylines;
   }
+
 
   // --- WIDGETS DE UI ---
 
@@ -827,14 +860,15 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
                                 final linea = _todasLasLineas[index];
                                 final id = linea['id_linea'] as int;
                                 final isSelected = _lineasSeleccionadas.contains(id);
-                                final color = _hexToColor(linea['color']);
+                                // Usar el mismo método de color que usa el mapa
+                                final color = _getLineaColor(index, linea['color'] as String?);
 
                                 return ListTile(
                                   leading: Container(
                                     width: 48,
                                     height: 48,
                                     decoration: BoxDecoration(
-                                      color: isSelected ? color : color.withOpacity(0.1),
+                                      color: isSelected ? color : color.withOpacity(0.12),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Icon(Icons.directions_bus, color: isSelected ? Colors.white : color),
@@ -961,7 +995,6 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
               Text('Rutas Disponibles', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.purple.shade900)),
               const SizedBox(height: 16),
               
-              // Ruta óptima
               _buildAlternativeTile(
                 title: 'Ruta Óptima',
                 ruta: _rutaOptima!,
@@ -969,7 +1002,9 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
                 icon: Icons.star,
                 onTap: () {
                   Navigator.pop(context);
-                  setState(() { _rutaSeleccionadaIndex = -1; _drawCurrentRoute(); });
+                  _rutaSeleccionadaIndex = -1;
+                  _drawCurrentRoute();
+                  setState(() {});
                 }
               ),
               
@@ -977,12 +1012,14 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
               ...List.generate(_rutasAlternativas.length, (index) {
                 return _buildAlternativeTile(
                   title: 'Alternativa ${index + 1}',
-                  ruta: _rutasAlternativas[index],
+                  ruta: _rutasAlternativas[index] as Map<String, dynamic>,
                   isSelected: _rutaSeleccionadaIndex == index,
                   icon: Icons.alt_route,
                   onTap: () {
                     Navigator.pop(context);
-                    setState(() { _rutaSeleccionadaIndex = index; _drawCurrentRoute(); });
+                    _rutaSeleccionadaIndex = index;
+                    _drawCurrentRoute();
+                    setState(() {});
                   }
                 );
               }),
