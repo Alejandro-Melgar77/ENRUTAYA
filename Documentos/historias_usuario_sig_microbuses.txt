@@ -1,0 +1,94 @@
+HISTORIAS DE USUARIO – SIG MICROBUSES
+
+ROL: PASAJERO (INVITADO)
+
+HU01 – Visualización de Recorrido
+Como usuario invitado,
+quiero seleccionar una línea de microbús,
+para visualizar su recorrido (ida y/o vuelta) en el mapa con indicadores de inicio (verde), fin (rojo) y dirección del trayecto.
+
+HU02 – Visualización de Unidades en Tiempo Real
+Como usuario invitado,
+quiero ver los microbuses activos de una línea sobre el mapa,
+para conocer su ubicación actual y distribución en el recorrido.
+
+HU03 – Ubicación del Usuario respecto a la Ruta
+Como usuario invitado,
+quiero que el sistema detecte mi ubicación y determine el punto más cercano sobre la ruta de la línea seleccionada,
+para usarlo como referencia en el cálculo de llegada de los microbuses.
+
+HU04 – Estimación de Llegada (ETA)
+Como usuario invitado,
+quiero conocer el tiempo estimado de llegada de los microbuses hacia mi punto más cercano en la ruta,
+para saber cuánto debo esperar.
+
+HU05 – Actualización en Tiempo Real
+Como usuario invitado,
+quiero que la ubicación de los microbuses se actualice automáticamente en el mapa,
+para ver cambios en tiempo real sin necesidad de recargar.
+
+HU06 – Visualización de Estado de Unidad
+Como usuario invitado,
+quiero distinguir si un microbús está en estado normal o en desvío,
+para interpretar correctamente su comportamiento en el mapa.
+
+
+ROL: UNIDAD (MICROBÚS / OPERADOR)
+
+HU07 – Autenticación de Unidad
+Como operador de un microbús,
+quiero ingresar un código único de unidad y la contraseña de la línea,
+para activar la unidad en el sistema sin necesidad de una cuenta personal.
+
+HU08 – Validación de Unidad Activa
+Como sistema,
+quiero evitar que una misma unidad se conecte múltiples veces simultáneamente,
+para prevenir duplicación de datos en el mapa.
+
+HU09 – Selección de Sentido de Ruta
+Como operador,
+quiero seleccionar el sentido del recorrido (ida o vuelta) antes de iniciar,
+para indicar correctamente la dirección del microbús en el sistema.
+
+HU10 – Inicio de Recorrido
+Como operador,
+quiero iniciar el recorrido de la unidad,
+para comenzar a transmitir mi ubicación y aparecer en el mapa de los pasajeros.
+
+HU11 – Transmisión de Ubicación
+Como unidad activa,
+quiero enviar automáticamente mi ubicación (latitud, longitud), velocidad y tiempo cada 30 segundos,
+para mantener actualizado el sistema en tiempo real.
+
+HU12 – Manejo de Pérdida de Conectividad
+Como sistema,
+quiero mantener la última ubicación de la unidad cuando se pierde la conexión,
+para evitar eliminarla inmediatamente del mapa y reflejar un estado de posible desconexión.
+
+HU13 – Finalización de Recorrido
+Como operador,
+quiero finalizar el recorrido,
+para dejar de transmitir mi ubicación y eliminar la unidad del mapa de pasajeros.
+
+HU14 – Notificación de Desvío
+Como operador,
+quiero marcar que estoy fuera de ruta por fuerza mayor,
+para que el sistema mantenga mi visibilidad pero indique un estado de advertencia.
+
+
+HISTORIAS DE SISTEMA
+
+HU15 – Cálculo de ETA sobre Ruta
+Como sistema,
+quiero calcular el tiempo estimado de llegada basándome en la distancia real sobre la ruta y la velocidad de la unidad,
+para proporcionar estimaciones más precisas.
+
+HU16 – Suscripción en Tiempo Real
+Como sistema,
+quiero utilizar actualizaciones en tiempo real mediante suscripciones,
+para reflejar cambios inmediatos en la ubicación de las unidades.
+
+HU17 – Identificación de Estado de Unidad
+Como sistema,
+quiero clasificar las unidades como activas o en desvío,
+para mostrar correctamente su estado en la interfaz.

@@ -1,0 +1,161 @@
+PRODUCT BACKLOG – SIG MICROBUSES (SPRINT ÚNICO MVP)
+
+OBJETIVO DEL SPRINT:
+Desarrollar una aplicación funcional que permita visualizar rutas de microbuses, ubicación en tiempo real de unidades y cálculo básico de ETA.
+
+--------------------------------------------------
+SECCIÓN 1: CONFIGURACIÓN INICIAL
+
+PB01 - Configuración del proyecto Flutter
+- Crear proyecto Flutter
+- Configurar estructura de carpetas (features, services, models)
+- Configurar variables de entorno
+
+PB02 - Integración con Supabase
+- Crear proyecto en Supabase
+- Configurar conexión desde Flutter
+- Instalar SDK de Supabase en Flutter
+
+PB03 - Configuración de Mapbox
+- Crear cuenta en Mapbox
+- Obtener API Key
+- Integrar SDK en Flutter
+- Mostrar mapa base
+
+--------------------------------------------------
+SECCIÓN 2: BASE DE DATOS
+
+PB04 - Creación de tablas
+- Crear tabla lineas
+- Crear tabla unidades
+- Crear tabla posiciones_actuales
+
+PB05 - Inserción de datos (Seeder)
+- Insertar líneas con rutas (GeoJSON)
+- Insertar unidades con códigos únicos
+
+PB06 - Configuración PostGIS
+- Habilitar extensión PostGIS
+- Validar almacenamiento de geometrías
+
+--------------------------------------------------
+SECCIÓN 3: MÓDULO OPERADOR
+
+PB07 - Pantalla Login Unidad
+- Crear formulario (código + contraseña)
+- Validar campos
+- Conectar con base de datos
+
+PB08 - Validación de unidad activa
+- Verificar si unidad ya está en posiciones_actuales
+- Bloquear acceso si ya está activa
+
+PB09 - Selección de sentido
+- UI para elegir ida/vuelta
+- Guardar selección
+
+PB10 - Inicio de recorrido
+- Insertar registro en posiciones_actuales
+- Activar estado de transmisión
+
+PB11 - Envío de GPS
+- Obtener ubicación con GPS del dispositivo
+- Enviar latitud, longitud, velocidad cada 30s
+- Actualizar registro en BD
+
+PB12 - Finalizar recorrido
+- Eliminar registro de posiciones_actuales
+
+PB13 - Marcar desvío
+- Actualizar estado a 'desvio'
+
+--------------------------------------------------
+SECCIÓN 4: MÓDULO PASAJERO
+
+PB14 - Selección de línea
+- Mostrar lista de líneas
+- Permitir selección
+
+PB15 - Visualización de ruta
+- Dibujar ruta en mapa (GeoJSON)
+- Mostrar inicio (verde) y fin (rojo)
+- Mostrar dirección con flechas
+
+PB16 - Visualización de microbuses
+- Obtener posiciones_actuales
+- Mostrar marcadores en mapa
+
+PB17 - Ubicación del usuario
+- Obtener GPS del usuario
+- Mostrar en mapa
+
+PB18 - Cálculo punto más cercano
+- Usar PostGIS para encontrar punto más cercano en la ruta
+
+PB19 - Cálculo de ETA
+- Calcular distancia sobre la ruta
+- Aplicar fórmula ETA = distancia / velocidad
+
+PB20 - Mostrar ETA
+- Mostrar tiempo estimado en UI
+
+--------------------------------------------------
+SECCIÓN 5: TIEMPO REAL
+
+PB21 - Suscripción en tiempo real
+- Configurar Supabase Realtime
+- Escuchar cambios en posiciones_actuales
+
+PB22 - Actualización dinámica
+- Refrescar posiciones sin recargar pantalla
+
+--------------------------------------------------
+SECCIÓN 6: MANEJO DE ESTADOS
+
+PB23 - Manejo de desconexión
+- Detectar inactividad (>2 minutos)
+- Marcar unidad como inactiva visualmente
+
+PB24 - Estado visual de unidad
+- Icono normal (activo)
+- Icono advertencia (desvío)
+
+--------------------------------------------------
+SECCIÓN 7: PRUEBAS Y VALIDACIÓN
+
+PB25 - Pruebas de operador
+- Login correcto/incorrecto
+- Inicio/fin recorrido
+- Envío de GPS
+
+PB26 - Pruebas de pasajero
+- Visualización de rutas
+- Visualización de microbuses
+- Cálculo de ETA
+
+PB27 - Pruebas de tiempo real
+- Validar actualización en vivo
+
+PB28 - Pruebas de edge cases
+- Sin internet
+- GPS desactivado
+
+--------------------------------------------------
+SECCIÓN 8: ENTREGA
+
+PB29 - Limpieza de código
+- Eliminar código innecesario
+- Documentar funciones clave
+
+PB30 - Preparación para demo
+- Flujo completo funcionando
+- Datos de prueba listos
+
+PB31 - Documentación
+- Historias de usuario
+- Backlog
+- Arquitectura básica
+
+--------------------------------------------------
+
+FIN DEL BACKLOG

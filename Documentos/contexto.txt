@@ -1,0 +1,32 @@
+# CONTEXTO DEL PROYECTO: SIG-MICROBUSES SANTA CRUZ
+
+## 1. VISIÓN GENERAL
+Desarrollo de una aplicación móvil integrada para el apoyo a usuarios y conductores de microbuses en Santa Cruz de la Sierra, Bolivia[cite: 1]. El sistema permite a los pasajeros conocer la ubicación en tiempo real de las unidades y a los microbuses compartir su trayecto activamente[cite: 1].
+
+## 2. ACTORES Y AUTENTICACIÓN (MODELO SIMPLIFICADO)
+* Invitado (Pasajero): Acceso libre sin registro ni inicio de sesión[cite: 1]. Puede consultar líneas, recorridos y ver buses en tiempo real[cite: 1].
+* Unidad de Microbús (Operador): No utiliza perfil personal[cite: 1]. El acceso se realiza mediante un Código Único de Unidad (ej. 00720056) que combina el número de línea y el número interno del microbús, junto a una contraseña de línea.
+
+## 3. REGLAS DE NEGOCIO CRÍTICAS
+* Frecuencia de GPS: La unidad activa debe transmitir su ubicación (Latitud, Longitud), velocidad y tiempo transcurrido cada 30 segundos exactos[cite: 1].
+* Gestión de Rutas: Cada línea tiene trayectos fijos de Ida y Vuelta[cite: 1]. El operador debe seleccionar el sentido antes de iniciar el envío de datos[cite: 1].
+* Interfaz del Mapa (SIG):
+    - El recorrido debe mostrar una marca color VERDE en la partida y ROJA en la llegada[cite: 1].
+    - Se deben incluir flechas sobre el trazado para indicar el sentido del recorrido[cite: 1].
+* Cálculo de ETA (Tiempo Estimado): Debe calcularse sobre la ruta física (distancia del trayecto), no en línea recta, basándose en la velocidad promedio reportada[cite: 1].
+
+## 4. STACK TECNOLÓGICO
+* Frontend: App única en Flutter con lógica de roles (Invitado / Operador de Unidad)[cite: 1].
+* Mapas: Mapbox SDK para renderizado de capas GeoJSON y marcadores personalizados.
+* Backend: Supabase (PostgreSQL con extensión PostGIS)[cite: 1].
+* Realtime: Supabase Realtime para la actualización de marcadores de microbuses en la vista del pasajero.
+
+## 5. ESTRUCTURA DE DATOS MÍNIMA (SQL)
+* Tabla 'lineas': Contiene nombre, color y trayectos de ida/vuelta como tipos Geometry (LineString)[cite: 1].
+* Tabla 'unidades': Almacena el código único de acceso, contraseña de línea, placa, modelo y número interno[cite: 1].
+* Tabla 'posiciones_actuales': Guarda la última ubicación (Point), velocidad, sentido y timestamp de cada microbús activo[cite: 1].
+
+## 6. FUNCIONALIDADES CLAVE
+1. Módulo Pasajero: Buscar líneas cercanas por radio de búsqueda y ver microbuses en actividad sobre el mapa[cite: 1].
+2. Módulo Operador: Iniciar recorrido, Terminar recorrido y Salida de ruta por fuerza mayor (registrando motivo)[cite: 1].
+3. SIG: Visualizar qué líneas de microbús pasan por un punto específico indicado por el usuario en el plano[cite: 1].

@@ -1,0 +1,20 @@
+Requisitos.
+
+1. Se debe tener la líneas de micros enteras y los puntos de paradas alineadas a la líneas de microbuses.
+
+2. Todas las paradas deben estar alineadas a las líneas de Microbuses, todas líneas inician con una Para y Termina en una Parada
+
+3. Si una Parada termina en un Punto Normal se debe eliminar el Punto Normal.
+
+Pasos para el proceso de armado del recorrido de las líneas.
+
+Paso 1. Split Line At Vertice, se usa el archivo lineas.shp y convierte las lineas en secciones de líneas por vertice. Genera un archivo de líneas seccionadas lineasSplit.shp. Aca se debe crear un campo Orden y se aplica la formula Orden=FID+1
+
+Paso 2. Con el archivo generado en el Paso 1 y el archivo de stop.shp, se aplica la herramienta Split Line at Point, y secciona las líneas de acuerdo a los puntos de Stop.shp. Convierte las secciones de vertices en puntos lineasSplitStop.shp. Aca se debe se  debe actualizar el campo Orden y se aplica la formula Orden=FID+1
+
+Paso 3. Feature Vertice to Point. se utiliza lineasSplitStop.shp, esta herramienta convierte vertices de cada linea en puntos, se genera la capa lineasPoints.shp. Se adiciona tres campos longitud, latitud y LonLat (texto 50). Se calculan los datos de los tres campos.
+
+Paso 4. Se hace un JOIN entre lineasPoints y Stop para saber que puntos son Stop, se crea un campo Stop y se determina cuales son Stop y cuales nò son.
+
+Paso 5. Se exporta a una capa Points.shp y eliminamos duplicados con Delete Identical usando el campo LonLat
+
