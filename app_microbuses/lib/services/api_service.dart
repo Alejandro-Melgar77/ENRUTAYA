@@ -34,4 +34,27 @@ class ApiService {
       return [];
     }
   }
+
+  // Algoritmo de rutas óptimas (Ir de A hacia B)
+  Future<Map<String, dynamic>?> calculateRoute(double originLat, double originLng, double destLat, double destLng) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/routing/calculate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'origen_lat': originLat,
+          'origen_lng': originLng,
+          'destino_lat': destLat,
+          'destino_lng': destLng
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print("Error calculating route: $e");
+      return null;
+    }
+  }
 }

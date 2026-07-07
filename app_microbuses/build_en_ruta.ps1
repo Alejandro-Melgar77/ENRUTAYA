@@ -1,13 +1,17 @@
-Write-Host "Iniciando compilación de EN RUTA YA!..." -ForegroundColor Purple
+Write-Host "Iniciando compilación de EN RUTA YA!..." -ForegroundColor Magenta
+
 flutter build apk --release
 
-$apkPath = "build\app\outputs\flutter-apk\app-release.apk"
-$destPath = "..\EN_RUTA_YA.apk"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error fatal: La compilación falló. Revisa el código arriba." -ForegroundColor Red
+    exit $LASTEXITCODE
+}
 
-if (Test-Path $apkPath) {
-    Copy-Item -Path $apkPath -Destination $destPath -Force
-    Write-Host "¡Compilación completada con éxito!" -ForegroundColor Green
-    Write-Host "El archivo APK renombrado se encuentra en la raíz del proyecto como: EN_RUTA_YA.apk" -ForegroundColor Green
+Write-Host "¡Compilación completada con éxito!" -ForegroundColor Green
+
+if (Test-Path "build\app\outputs\flutter-apk\app-release.apk") {
+    Copy-Item "build\app\outputs\flutter-apk\app-release.apk" -Destination "..\EN_RUTA_YA.apk" -Force
+    Write-Host "El archivo APK renombrado se encuentra en la raíz del proyecto como: EN_RUTA_YA.apk" -ForegroundColor Magenta
 } else {
-    Write-Host "Error: No se encontró el APK compilado. Revisa los mensajes de error de Flutter arriba." -ForegroundColor Red
+    Write-Host "No se encontró el APK generado." -ForegroundColor Red
 }

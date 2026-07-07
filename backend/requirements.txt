@@ -5,3 +5,7 @@ pydantic
 python-dotenv
 sqlalchemy
 asyncpg
+
+networkx
+openpyxl
+pandas
