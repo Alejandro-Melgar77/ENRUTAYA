@@ -2,9 +2,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class ApiService {
-  // ATENCIÓN: 'localhost' no funciona en un celular físico. 
-  // Debes reemplazar '192.168.x.x' por la dirección IPv4 local de tu computadora.
-  static const String baseUrl = 'http://192.168.1.100:3000/api';
+  // URL de Producción en Render
+  static const String baseUrl = 'https://enrutaya.onrender.com/api';
 
   // Endpoint conceptual para login de operador
   Future<bool> loginOperator(String email, String password) async {
