@@ -9,3 +9,5 @@ asyncpg
 networkx
 openpyxl
 pandas
+xlrd
+gunicorn

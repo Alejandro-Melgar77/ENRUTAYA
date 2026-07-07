@@ -57,4 +57,19 @@ class ApiService {
       return null;
     }
   }
+
+  // Obtener todas las líneas con sus recorridos completos
+  Future<List<dynamic>?> getAllLineas() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/routing/lineas'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['lineas'];
+      }
+      return null;
+    } catch (e) {
+      print("Error fetching all lineas: $e");
+      return null;
+    }
+  }
 }
