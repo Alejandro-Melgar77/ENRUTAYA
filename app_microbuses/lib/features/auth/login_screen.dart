@@ -49,11 +49,11 @@ class _LoginScreenState extends State<LoginScreen> {
             const Icon(Icons.security, size: 80, color: Colors.deepPurple),
             const SizedBox(height: 24),
             TextField(
-              controller: _emailController,
+              controller: _emailController, // Seguimos usando esta variable para no romper nada, pero significa Placa
               decoration: const InputDecoration(
-                labelText: 'Correo',
+                labelText: 'Placa del Microbús (ej. ABC-123)',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.email),
+                prefixIcon: Icon(Icons.directions_bus),
               ),
             ),
             const SizedBox(height: 16),

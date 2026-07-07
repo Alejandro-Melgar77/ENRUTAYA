@@ -5,30 +5,32 @@ class ApiService {
   // URL de Producción en Render
   static const String baseUrl = 'https://enrutaya.onrender.com/api';
 
-  // Endpoint conceptual para login de operador
-  Future<bool> loginOperator(String email, String password) async {
+  // Autenticación de Operador (Microbús)
+  Future<bool> loginOperator(String placa, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
-        body: jsonEncode({'email': email, 'password': password}),
+        Uri.parse('$baseUrl/units/login'),
+        body: jsonEncode({'placa': placa}),
         headers: {'Content-Type': 'application/json'},
       );
       return response.statusCode == 200;
     } catch (e) {
-      // Simula éxito para pruebas de UI
-      return true;
+      print("Login error: $e");
+      return false;
     }
   }
 
-  // Endpoint conceptual para obtener microbuses (Vista pasajero)
-  Future<List<dynamic>> getMicrobuses() async {
+  // Obtener las líneas y sus rutas desde la base de datos (PostGIS)
+  Future<List<dynamic>> getLineas() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/microbuses'));
+      final response = await http.get(Uri.parse('$baseUrl/routes/lineas'));
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final data = jsonDecode(response.body);
+        return data['lineas'] ?? [];
       }
       return [];
     } catch (e) {
+      print("Error fetching lineas: $e");
       return [];
     }
   }
