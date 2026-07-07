@@ -7,14 +7,14 @@ import '../../services/api_service.dart';
 
 // Estados del flujo principal
 enum MapState {
-  initial,           // Mapa con botones "Calcular Ruta" y "Micros Disponibles"
-  selectingOrigin,   // Flecha de origen visible, esperando que usuario arrastre
-  originPlaced,      // Origen colocado, botón "Confirmar Origen" visible
-  selectingDest,     // Flecha de destino visible
-  destPlaced,        // Destino colocado, botón "Confirmar Destino" visible
-  calculating,       // Calculando ruta...
-  showingResult,     // Ruta dibujada en el mapa
-  showingLines,      // Mostrando listado de líneas
+  initial,
+  selectingOrigin,
+  originPlaced,
+  selectingDest,
+  destPlaced,
+  calculating,
+  showingResult,
+  showingLines,
 }
 
 class MapScreen extends StatefulWidget {
@@ -25,9 +25,13 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMixin {
   final MapController _mapController = MapController();
   MapState _state = MapState.initial;
+
+  // Animación del microbús
+  late AnimationController _busAnimationController;
+  late Animation<double> _busAnimation;
 
   // Ubicación del usuario
   LatLng _userLocation = const LatLng(-17.7845, -63.1795);
@@ -40,7 +44,8 @@ class _MapScreenState extends State<MapScreen> {
   Map<String, dynamic>? _rutaOptima;
   List<dynamic> _rutasAlternativas = [];
   int _rutaSeleccionadaIndex = -1; // -1 = óptima
-  String? _errorMsg;
+  bool _isRouteNotFound = false; // Flag para mensaje de error específico
+  bool _showDashboard = true; // Flag para ocultar/mostrar dashboard de ruta
 
   // Polylines para dibujar
   List<Polyline> _polylines = [];
@@ -55,6 +60,22 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _checkLocationPermission();
+    
+    // Configurar animación del microbús
+    _busAnimationController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat(reverse: true);
+    
+    _busAnimation = Tween<double>(begin: -1.0, end: 1.0).animate(
+      CurvedAnimation(parent: _busAnimationController, curve: Curves.easeInOutSine)
+    );
+  }
+
+  @override
+  void dispose() {
+    _busAnimationController.dispose();
+    super.dispose();
   }
 
   Future<void> _checkLocationPermission() async {
@@ -75,7 +96,7 @@ class _MapScreenState extends State<MapScreen> {
       });
       _mapController.move(_userLocation, 14.0);
     } catch (e) {
-      // GPS no disponible, usar ubicación por defecto
+      // Ignorar si falla GPS
     }
   }
 
@@ -101,7 +122,8 @@ class _MapScreenState extends State<MapScreen> {
       _rutaOptima = null;
       _rutasAlternativas = [];
       _rutaSeleccionadaIndex = -1;
-      _errorMsg = null;
+      _isRouteNotFound = false;
+      _showDashboard = true;
       _polylines = [];
       _markers = [];
     });
@@ -129,18 +151,10 @@ class _MapScreenState extends State<MapScreen> {
       _destino!.latitude, _destino!.longitude,
     );
 
-    if (result == null) {
+    if (result == null || result['status'] != 'success') {
       setState(() {
         _state = MapState.showingResult;
-        _errorMsg = 'Error de conexión con el servidor. Verifica tu internet.';
-      });
-      return;
-    }
-
-    if (result['status'] != 'success') {
-      setState(() {
-        _state = MapState.showingResult;
-        _errorMsg = result['detail'] ?? 'No se encontró una ruta posible.';
+        _isRouteNotFound = true;
       });
       return;
     }
@@ -149,7 +163,8 @@ class _MapScreenState extends State<MapScreen> {
       _rutaOptima = result['ruta_optima'];
       _rutasAlternativas = result['rutas_alternativas'] ?? [];
       _rutaSeleccionadaIndex = -1;
-      _errorMsg = null;
+      _isRouteNotFound = false;
+      _showDashboard = true;
       _state = MapState.showingResult;
       _drawCurrentRoute();
     });
@@ -175,7 +190,7 @@ class _MapScreenState extends State<MapScreen> {
       newPolylines.add(Polyline(
         points: points,
         strokeWidth: 6.0,
-        color: Colors.purple.shade700,
+        color: _hexToColor(seg['color']),
       ));
     }
 
@@ -241,7 +256,8 @@ class _MapScreenState extends State<MapScreen> {
       _rutaOptima = null;
       _rutasAlternativas = [];
       _rutaSeleccionadaIndex = -1;
-      _errorMsg = null;
+      _isRouteNotFound = false;
+      _showDashboard = true;
       _polylines = [];
       _markers = [];
       _lineasSeleccionadas = {};
@@ -336,13 +352,9 @@ class _MapScreenState extends State<MapScreen> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.app_microbuses',
               ),
-              // Polylines de rutas calculadas
               PolylineLayer(polylines: _polylines),
-              // Polylines de líneas seleccionadas (micros disponibles)
               PolylineLayer(polylines: _polylinesLineas),
-              // Marcadores
               MarkerLayer(markers: _markers),
-              // Punto azul de ubicación del usuario
               MarkerLayer(markers: [
                 Marker(
                   point: _userLocation,
@@ -360,7 +372,7 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ),
 
-          // CROSSHAIR (flecha central) para seleccionar origen/destino
+          // CROSSHAIR de origen/destino
           if (_state == MapState.selectingOrigin || _state == MapState.originPlaced)
             Center(
               child: Column(
@@ -399,9 +411,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // === CONTROLES SEGÚN EL ESTADO ===
-
-          // ESTADO INICIAL: Botones principales
+          // === CONTROLES ESTADO INICIAL ===
           if (_state == MapState.initial)
             Positioned(
               bottom: 30,
@@ -447,7 +457,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // SELECCIONANDO ORIGEN: instrucción arriba + botón confirmar abajo
+          // === ORIGEN / DESTINO INSTRUCCIONES ===
           if (_state == MapState.selectingOrigin || _state == MapState.originPlaced)
             Positioned(
               top: 10,
@@ -492,7 +502,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // SELECCIONANDO DESTINO
           if (_state == MapState.selectingDest || _state == MapState.destPlaced)
             Positioned(
               top: 10,
@@ -537,7 +546,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // Marcador del origen ya confirmado (mientras se elige destino)
           if ((_state == MapState.selectingDest || _state == MapState.destPlaced) && _origen != null)
             Positioned(
               top: 80,
@@ -558,20 +566,44 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // CALCULANDO
+          // === CARGANDO ANIMADO ===
           if (_state == MapState.calculating)
             Container(
-              color: Colors.black38,
-              child: const Center(
+              color: Colors.black.withOpacity(0.6),
+              child: Center(
                 child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: Padding(
-                    padding: EdgeInsets.all(24.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: Colors.purple),
-                        SizedBox(height: 16),
-                        Text('Calculando ruta óptima...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        SizedBox(
+                          width: 200,
+                          height: 60,
+                          child: AnimatedBuilder(
+                            animation: _busAnimation,
+                            builder: (context, child) {
+                              return Stack(
+                                children: [
+                                  Positioned(
+                                    bottom: 10,
+                                    left: 0,
+                                    right: 0,
+                                    child: Container(height: 2, color: Colors.grey.shade300),
+                                  ),
+                                  Align(
+                                    alignment: Alignment(_busAnimation.value, 0),
+                                    child: Icon(Icons.directions_bus, size: 48, color: Colors.purple.shade700),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Calculando ruta...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
                       ],
                     ),
                   ),
@@ -579,79 +611,97 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-          // RESULTADO: ERROR
-          if (_state == MapState.showingResult && _errorMsg != null)
-            Positioned(
-              bottom: 30,
-              left: 20,
-              right: 20,
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red, width: 2),
-                    ),
-                    child: Row(
+          // === ERROR ESPECÍFICO ===
+          if (_state == MapState.showingResult && _isRouteNotFound)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: Center(
+                child: Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 30),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error, color: Colors.red, size: 32),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _errorMsg!,
-                            style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 15),
+                        const Icon(Icons.location_off, size: 64, color: Colors.red),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No se puede calcular la ruta requerida',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'disponible proximamente.....',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple.shade700,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: _startSelectOrigin,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Calcular otra ruta'),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.purple.shade700,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: _startSelectOrigin,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Calcular otra ruta', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
 
-          // RESULTADO: ÉXITO
-          if (_state == MapState.showingResult && _errorMsg == null && _rutaOptima != null)
-            Positioned(
-              bottom: 0,
+          // === RESULTADO ÉXITO: DASHBOARD OCULTABLE ===
+          if (_state == MapState.showingResult && !_isRouteNotFound && _rutaOptima != null)
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              bottom: _showDashboard ? 0 : -MediaQuery.of(context).size.height * 0.45,
               left: 0,
               right: 0,
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                  boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black.withOpacity(0.2))],
+                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                  boxShadow: [BoxShadow(blurRadius: 15, color: Colors.black.withOpacity(0.3), offset: const Offset(0, -2))],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Handle bar
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                    // Handle para ocultar/mostrar (hace toggle)
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _showDashboard = !_showDashboard;
+                        });
+                      },
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: Container(
+                            width: 50,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade400,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    // Información de la ruta
+                    
                     Padding(
-                      padding: const EdgeInsets.all(16.0),
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -661,50 +711,49 @@ class _MapScreenState extends State<MapScreen> {
                               const SizedBox(width: 8),
                               Text(
                                 _rutaSeleccionadaIndex == -1 ? 'Ruta Óptima' : 'Ruta Alternativa ${_rutaSeleccionadaIndex + 1}',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.purple.shade700),
+                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          // Info de la ruta actual
-                          _buildRouteInfoCard(_rutaSeleccionadaIndex == -1
-                              ? _rutaOptima!
-                              : _rutasAlternativas[_rutaSeleccionadaIndex]),
                           const SizedBox(height: 12),
-                          // Instrucciones
-                          _buildInstruccionesList(_rutaSeleccionadaIndex == -1
-                              ? _rutaOptima!
-                              : _rutasAlternativas[_rutaSeleccionadaIndex]),
-                          const SizedBox(height: 12),
-                          // Botón de rutas alternativas
+                          _buildRouteInfoCard(_rutaSeleccionadaIndex == -1 ? _rutaOptima! : _rutasAlternativas[_rutaSeleccionadaIndex]),
+                          const SizedBox(height: 16),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 180),
+                            child: SingleChildScrollView(
+                              child: _buildInstruccionesList(_rutaSeleccionadaIndex == -1 ? _rutaOptima! : _rutasAlternativas[_rutaSeleccionadaIndex]),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
                           if (_rutasAlternativas.isNotEmpty)
                             SizedBox(
                               width: double.infinity,
-                              height: 44,
+                              height: 48,
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.purple.shade700,
-                                  side: BorderSide(color: Colors.purple.shade700),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  side: BorderSide(color: Colors.purple.shade700, width: 2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                                 onPressed: _showAlternativeRoutes,
                                 icon: const Icon(Icons.alt_route),
-                                label: Text('Rutas Alternativas (${_rutasAlternativas.length})'),
+                                label: Text('Ver Rutas Alternativas (${_rutasAlternativas.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
                               ),
                             ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 10),
                           SizedBox(
                             width: double.infinity,
-                            height: 48,
+                            height: 52,
                             child: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.purple.shade700,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                elevation: 2,
                               ),
                               onPressed: _startSelectOrigin,
                               icon: const Icon(Icons.refresh),
-                              label: const Text('Calcular otra ruta', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              label: const Text('Calcular otra ruta', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ],
@@ -714,47 +763,58 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
+            
+          // Botón flotante para re-mostrar el dashboard si está oculto
+          if (_state == MapState.showingResult && !_isRouteNotFound && !_showDashboard)
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: FloatingActionButton(
+                backgroundColor: Colors.purple.shade700,
+                foregroundColor: Colors.white,
+                onPressed: () {
+                  setState(() {
+                    _showDashboard = true;
+                  });
+                },
+                child: const Icon(Icons.keyboard_arrow_up, size: 32),
+              ),
+            ),
 
-          // MICROS DISPONIBLES: Panel lateral
+          // PANEL MICROS DISPONIBLES
           if (_state == MapState.showingLines)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
               child: Container(
-                height: MediaQuery.of(context).size.height * 0.45,
+                height: MediaQuery.of(context).size.height * 0.5,
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                  boxShadow: [BoxShadow(blurRadius: 10, color: Colors.black.withOpacity(0.2))],
+                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                  boxShadow: [BoxShadow(blurRadius: 15, color: Colors.black.withOpacity(0.3))],
                 ),
                 child: Column(
                   children: [
                     Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      width: 50,
+                      height: 6,
+                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(3)),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(12.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Row(
                         children: [
                           Icon(Icons.directions_bus, color: Colors.purple.shade700),
                           const SizedBox(width: 8),
-                          Text('Micros Disponibles', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
+                          Text('Micros Disponibles', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.purple.shade900)),
                           const Spacer(),
-                          TextButton(
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
                             onPressed: _resetToInitial,
-                            child: const Text('Cerrar', style: TextStyle(color: Colors.red)),
                           ),
                         ],
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('Toca una línea para ver su recorrido. Puedes ver varias a la vez.',
-                        style: TextStyle(color: Colors.grey, fontSize: 13),
                       ),
                     ),
                     const Divider(),
@@ -771,19 +831,19 @@ class _MapScreenState extends State<MapScreen> {
 
                                 return ListTile(
                                   leading: Container(
-                                    width: 40,
-                                    height: 40,
+                                    width: 48,
+                                    height: 48,
                                     decoration: BoxDecoration(
-                                      color: isSelected ? color : Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(8),
+                                      color: isSelected ? color : color.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Icon(Icons.directions_bus, color: isSelected ? Colors.white : color),
                                   ),
-                                  title: Text(linea['nombre'], style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? color : Colors.black87)),
-                                  subtitle: Text('${(linea['rutas'] as List).length} rutas disponibles'),
+                                  title: Text(linea['nombre'], style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isSelected ? color : Colors.black87)),
+                                  subtitle: const Text('Ver recorrido completo'),
                                   trailing: isSelected
-                                      ? Icon(Icons.visibility, color: color)
-                                      : const Icon(Icons.visibility_off, color: Colors.grey),
+                                      ? Icon(Icons.check_circle, color: color, size: 28)
+                                      : Icon(Icons.circle_outlined, color: Colors.grey.shade400, size: 28),
                                   onTap: () => _toggleLinea(id),
                                 );
                               },
@@ -795,60 +855,38 @@ class _MapScreenState extends State<MapScreen> {
             ),
         ],
       ),
-      // FAB para centrar en mi ubicación
-      floatingActionButton: (_state == MapState.initial ||
-              _state == MapState.selectingOrigin ||
-              _state == MapState.selectingDest)
-          ? FloatingActionButton(
-              mini: true,
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.purple.shade700,
-              onPressed: () {
-                _mapController.move(_userLocation, 14.5);
-              },
-              child: const Icon(Icons.my_location),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
     );
   }
 
   Widget _buildRouteInfoCard(Map<String, dynamic> ruta) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.purple.shade50,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.purple.shade100, width: 2),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Column(
-            children: [
-              Icon(Icons.timer, color: Colors.purple.shade700),
-              const SizedBox(height: 4),
-              Text('${ruta['tiempo_estimado_min']} min', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
-              const Text('Tiempo', style: TextStyle(fontSize: 11, color: Colors.grey)),
-            ],
-          ),
-          Column(
-            children: [
-              Icon(Icons.transfer_within_a_station, color: Colors.purple.shade700),
-              const SizedBox(height: 4),
-              Text('${ruta['num_transbordos']}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
-              const Text('Transbordos', style: TextStyle(fontSize: 11, color: Colors.grey)),
-            ],
-          ),
-          Column(
-            children: [
-              Icon(Icons.directions_bus, color: Colors.purple.shade700),
-              const SizedBox(height: 4),
-              Text('${(ruta['lineas_usadas'] as List).length}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
-              const Text('Líneas', style: TextStyle(fontSize: 11, color: Colors.grey)),
-            ],
-          ),
+          _buildInfoItem(Icons.timer, '${ruta['tiempo_estimado_min']} min', 'Tiempo'),
+          Container(width: 1, height: 40, color: Colors.purple.shade200),
+          _buildInfoItem(Icons.transfer_within_a_station, '${ruta['num_transbordos']}', 'Transbordos'),
+          Container(width: 1, height: 40, color: Colors.purple.shade200),
+          _buildInfoItem(Icons.directions_bus, '${(ruta['lineas_usadas'] as List).length}', 'Líneas'),
         ],
       ),
+    );
+  }
+  
+  Widget _buildInfoItem(IconData icon, String value, String label) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.purple.shade700, size: 28),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.purple.shade900)),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
     );
   }
 
@@ -857,8 +895,8 @@ class _MapScreenState extends State<MapScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Instrucciones:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        const SizedBox(height: 4),
+        const Text('Paso a paso:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+        const SizedBox(height: 8),
         ...instrucciones.map((inst) {
           IconData icon;
           Color color;
@@ -880,12 +918,20 @@ class _MapScreenState extends State<MapScreen> {
               color = Colors.grey;
           }
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.only(bottom: 12),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, size: 18, color: color),
-                const SizedBox(width: 8),
-                Expanded(child: Text(inst['mensaje'], style: const TextStyle(fontSize: 13))),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+                  child: Icon(icon, size: 20, color: color),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(inst['mensaje'], style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500)),
+                )),
               ],
             ),
           );
@@ -897,64 +943,77 @@ class _MapScreenState extends State<MapScreen> {
   void _showAlternativeRoutes() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(16),
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text('Rutas Alternativas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
-              const SizedBox(height: 4),
-              // Opción: ruta óptima
-              ListTile(
-                leading: Icon(Icons.star, color: Colors.purple.shade700),
-                title: const Text('Ruta Óptima', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${_rutaOptima!['tiempo_estimado_min']} min • ${_rutaOptima!['num_transbordos']} transbordos • Líneas: ${(_rutaOptima!['lineas_usadas'] as List).join(', ')}'),
-                selected: _rutaSeleccionadaIndex == -1,
-                selectedTileColor: Colors.purple.shade50,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              Center(child: Container(width: 50, height: 6, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(3)))),
+              const SizedBox(height: 16),
+              Text('Rutas Disponibles', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.purple.shade900)),
+              const SizedBox(height: 16),
+              
+              // Ruta óptima
+              _buildAlternativeTile(
+                title: 'Ruta Óptima',
+                ruta: _rutaOptima!,
+                isSelected: _rutaSeleccionadaIndex == -1,
+                icon: Icons.star,
                 onTap: () {
                   Navigator.pop(context);
-                  setState(() {
-                    _rutaSeleccionadaIndex = -1;
-                    _drawCurrentRoute();
-                  });
-                },
+                  setState(() { _rutaSeleccionadaIndex = -1; _drawCurrentRoute(); });
+                }
               ),
+              
+              // Alternativas
               ...List.generate(_rutasAlternativas.length, (index) {
-                final alt = _rutasAlternativas[index];
-                return ListTile(
-                  leading: Icon(Icons.alt_route, color: Colors.purple.shade400),
-                  title: Text('Alternativa ${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${alt['tiempo_estimado_min']} min • ${alt['num_transbordos']} transbordos • Líneas: ${(alt['lineas_usadas'] as List).join(', ')}'),
-                  selected: _rutaSeleccionadaIndex == index,
-                  selectedTileColor: Colors.purple.shade50,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                return _buildAlternativeTile(
+                  title: 'Alternativa ${index + 1}',
+                  ruta: _rutasAlternativas[index],
+                  isSelected: _rutaSeleccionadaIndex == index,
+                  icon: Icons.alt_route,
                   onTap: () {
                     Navigator.pop(context);
-                    setState(() {
-                      _rutaSeleccionadaIndex = index;
-                      _drawCurrentRoute();
-                    });
-                  },
+                    setState(() { _rutaSeleccionadaIndex = index; _drawCurrentRoute(); });
+                  }
                 );
               }),
             ],
           ),
         );
       },
+    );
+  }
+  
+  Widget _buildAlternativeTile({required String title, required Map<String, dynamic> ruta, required bool isSelected, required IconData icon, required VoidCallback onTap}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.purple.shade50 : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isSelected ? Colors.purple.shade400 : Colors.grey.shade300, width: 2),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Icon(icon, color: isSelected ? Colors.purple.shade700 : Colors.grey.shade500, size: 32),
+        title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isSelected ? Colors.purple.shade900 : Colors.black87)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: Text(
+            '${ruta['tiempo_estimado_min']} min • ${ruta['num_transbordos']} trasbordos\nLíneas: ${(ruta['lineas_usadas'] as List).join(' -> ')}',
+            style: const TextStyle(height: 1.4),
+          ),
+        ),
+        onTap: onTap,
+      ),
     );
   }
 }
