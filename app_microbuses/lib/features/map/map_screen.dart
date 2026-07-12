@@ -893,34 +893,57 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
   }
 
   Widget _buildRouteInfoCard(Map<String, dynamic> ruta) {
+    final distKm = ruta['distancia_total_km'] ?? 0;
+    final walkOrig = ruta['distancia_caminata_origen_m'] ?? 0;
+    final walkDest = ruta['distancia_caminata_destino_m'] ?? 0;
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.purple.shade50,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.purple.shade100, width: 2),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Column(
         children: [
-          _buildInfoItem(Icons.timer, '${ruta['tiempo_estimado_min']} min', 'Tiempo'),
-          Container(width: 1, height: 40, color: Colors.purple.shade200),
-          _buildInfoItem(Icons.transfer_within_a_station, '${ruta['num_transbordos']}', 'Transbordos'),
-          Container(width: 1, height: 40, color: Colors.purple.shade200),
-          _buildInfoItem(Icons.directions_bus, '${(ruta['lineas_usadas'] as List).length}', 'Líneas'),
+          // Fila 1: Tiempo, Distancia, Transbordos
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildInfoItem(Icons.timer, '${ruta['tiempo_estimado_min']} min', 'Tiempo Total'),
+              Container(width: 1, height: 36, color: Colors.purple.shade200),
+              _buildInfoItem(Icons.straighten, '$distKm km', 'Distancia'),
+              Container(width: 1, height: 36, color: Colors.purple.shade200),
+              _buildInfoItem(Icons.transfer_within_a_station, '${ruta['num_transbordos']}', 'Transbordos'),
+            ],
+          ),
+          const Divider(height: 16),
+          // Fila 2: Caminata al bus, En bus, Caminata desde bus
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildInfoItem(Icons.directions_walk, '$walkOrig m', 'Al micro'),
+              Container(width: 1, height: 36, color: Colors.purple.shade200),
+              _buildInfoItem(Icons.directions_bus, '${ruta['tiempo_en_bus_min'] ?? ruta['tiempo_estimado_min']} min', 'En micro'),
+              Container(width: 1, height: 36, color: Colors.purple.shade200),
+              _buildInfoItem(Icons.directions_walk, '$walkDest m', 'Al destino'),
+            ],
+          ),
         ],
       ),
     );
   }
   
   Widget _buildInfoItem(IconData icon, String value, String label) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.purple.shade700, size: 28),
-        const SizedBox(height: 4),
-        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.purple.shade900)),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      ],
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.purple.shade700, size: 22),
+          const SizedBox(height: 2),
+          Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.purple.shade900), textAlign: TextAlign.center),
+          Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey), textAlign: TextAlign.center),
+        ],
+      ),
     );
   }
 
@@ -1045,7 +1068,7 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
-            '${ruta['tiempo_estimado_min']} min • ${ruta['num_transbordos']} trasbordos\nLíneas: ${(ruta['lineas_usadas'] as List).join(' -> ')}',
+            '${ruta['tiempo_estimado_min']} min • ${ruta['distancia_total_km'] ?? '?'} km • ${ruta['num_transbordos']} trasbordos\nLíneas: ${(ruta['lineas_usadas'] as List).join(' -> ')}',
             style: const TextStyle(height: 1.4),
           ),
         ),
