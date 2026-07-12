@@ -60,14 +60,21 @@ def init_graph():
     global lineas_puntos_df, trasbordos_df, ruta_to_linea
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    excel_path = os.path.join(base_dir, "..", "Documentos", "Datos_Lineas", "DatosLineas.xls")
+    datos_dir = os.path.join(base_dir, "..", "Documentos", "Datos_Lineas")
+    
+    # Archivos individuales actualizados por el usuario
+    puntos_path = os.path.join(datos_dir, "puntos.xlsx")
+    lineas_path = os.path.join(datos_dir, "DatosLineas.xls")  # Contiene la hoja Lineas
+    lineas_puntos_path = os.path.join(datos_dir, "lineasPuntos.xlsx")
+    linea_ruta_path = os.path.join(datos_dir, "lineaRuta.xlsx")
+    trasbordos_path = os.path.join(datos_dir, "Puntostrasbordos.xlsx")
 
     try:
-        puntos_df       = pd.read_excel(excel_path, sheet_name="Puntos")
-        lineas_df       = pd.read_excel(excel_path, sheet_name="Lineas")
-        lineas_puntos_df = pd.read_excel(excel_path, sheet_name="LineasPuntos")
-        linea_ruta_df   = pd.read_excel(excel_path, sheet_name="LineaRuta")
-        trasbordos_df   = pd.read_excel(excel_path, sheet_name="PuntosTrasbordos")
+        puntos_df       = pd.read_excel(puntos_path)
+        lineas_df       = pd.read_excel(lineas_path, sheet_name="Lineas")
+        lineas_puntos_df = pd.read_excel(lineas_puntos_path)
+        linea_ruta_df   = pd.read_excel(linea_ruta_path)
+        trasbordos_df   = pd.read_excel(trasbordos_path)
 
         puntos_indexed = puntos_df.set_index("IdPunto")
 
