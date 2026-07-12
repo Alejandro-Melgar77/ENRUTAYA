@@ -53,7 +53,7 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
 
   // Micros disponibles
   List<dynamic> _todasLasLineas = [];
-  Set<int> _lineasSeleccionadas = {};
+  Map<int, String> _lineasSeleccionadas = {}; // id_linea -> 'ida' o 'vuelta'
   List<Polyline> _polylinesLineas = [];
 
   @override
@@ -284,12 +284,16 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
     }
   }
 
-  void _toggleLinea(int idLinea) {
+  void _toggleLinea(int idLinea, [String? sentido]) {
     setState(() {
-      if (_lineasSeleccionadas.contains(idLinea)) {
-        _lineasSeleccionadas.remove(idLinea);
+      if (_lineasSeleccionadas.containsKey(idLinea)) {
+        if (sentido == null || _lineasSeleccionadas[idLinea] == sentido) {
+          _lineasSeleccionadas.remove(idLinea);
+        } else {
+          _lineasSeleccionadas[idLinea] = sentido;
+        }
       } else {
-        _lineasSeleccionadas.add(idLinea);
+        _lineasSeleccionadas[idLinea] = sentido ?? 'ida';
       }
       _rebuildLineasPolylines();
     });
@@ -325,15 +329,19 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
 
     int paletteIndex = 0;
     for (var linea in _todasLasLineas) {
-      if (!_lineasSeleccionadas.contains(linea['id_linea'])) {
+      final idLinea = linea['id_linea'] as int;
+      if (!_lineasSeleccionadas.containsKey(idLinea)) {
         paletteIndex++;
         continue;
       }
 
+      final String selectedSentido = _lineasSeleccionadas[idLinea]!;
       Color color = _getLineaColor(paletteIndex, linea['color'] as String?);
       paletteIndex++;
 
       for (var ruta in linea['rutas']) {
+        if (ruta['sentido'] != selectedSentido) continue;
+
         List<LatLng> points = [];
         for (var coord in ruta['coordenadas']) {
           points.add(LatLng((coord['lat'] as num).toDouble(), (coord['lng'] as num).toDouble()));
@@ -859,7 +867,8 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
                               itemBuilder: (context, index) {
                                 final linea = _todasLasLineas[index];
                                 final id = linea['id_linea'] as int;
-                                final isSelected = _lineasSeleccionadas.contains(id);
+                                final isSelected = _lineasSeleccionadas.containsKey(id);
+                                final selectedSentido = isSelected ? _lineasSeleccionadas[id] : null;
                                 // Usar el mismo método de color que usa el mapa
                                 final color = _getLineaColor(index, linea['color'] as String?);
 
@@ -875,9 +884,43 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
                                   ),
                                   title: Text(linea['nombre'], style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isSelected ? color : Colors.black87)),
                                   subtitle: const Text('Ver recorrido completo'),
-                                  trailing: isSelected
-                                      ? Icon(Icons.check_circle, color: color, size: 28)
-                                      : Icon(Icons.circle_outlined, color: Colors.grey.shade400, size: 28),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (isSelected)
+                                        Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            InkWell(
+                                              onTap: () => _toggleLinea(id, 'ida'),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: selectedSentido == 'ida' ? color : Colors.grey.shade200,
+                                                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8)),
+                                                ),
+                                                child: Icon(Icons.arrow_upward, size: 18, color: selectedSentido == 'ida' ? Colors.white : Colors.grey.shade600),
+                                              ),
+                                            ),
+                                            InkWell(
+                                              onTap: () => _toggleLinea(id, 'vuelta'),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: selectedSentido == 'vuelta' ? color : Colors.grey.shade200,
+                                                  borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(8), bottomRight: Radius.circular(8)),
+                                                ),
+                                                child: Icon(Icons.arrow_downward, size: 18, color: selectedSentido == 'vuelta' ? Colors.white : Colors.grey.shade600),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      const SizedBox(width: 8),
+                                      isSelected
+                                          ? Icon(Icons.check_circle, color: color, size: 28)
+                                          : Icon(Icons.circle_outlined, color: Colors.grey.shade400, size: 28),
+                                    ],
+                                  ),
                                   onTap: () => _toggleLinea(id),
                                 );
                               },

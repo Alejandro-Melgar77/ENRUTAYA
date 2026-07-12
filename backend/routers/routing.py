@@ -60,14 +60,14 @@ def init_graph():
     global lineas_puntos_df, trasbordos_df, ruta_to_linea
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    data_dir = os.path.join(base_dir, "data")
+    excel_path = os.path.join(base_dir, "..", "Documentos", "Datos_Lineas", "DatosLineas.xls")
 
     try:
-        puntos_df       = pd.read_excel(os.path.join(data_dir, "puntos.xlsx"))
-        lineas_df       = pd.read_excel(os.path.join(data_dir, "DatosLineas.xls"))
-        lineas_puntos_df = pd.read_excel(os.path.join(data_dir, "LineasPuntos.xlsx"))
-        linea_ruta_df   = pd.read_excel(os.path.join(data_dir, "LineaRuta.xlsx"))
-        trasbordos_df   = pd.read_excel(os.path.join(data_dir, "PuntosTrasbordos.xlsx"))
+        puntos_df       = pd.read_excel(excel_path, sheet_name="Puntos")
+        lineas_df       = pd.read_excel(excel_path, sheet_name="Lineas")
+        lineas_puntos_df = pd.read_excel(excel_path, sheet_name="LineasPuntos")
+        linea_ruta_df   = pd.read_excel(excel_path, sheet_name="LineaRuta")
+        trasbordos_df   = pd.read_excel(excel_path, sheet_name="PuntosTrasbordos")
 
         puntos_indexed = puntos_df.set_index("IdPunto")
 
@@ -464,6 +464,7 @@ async def get_all_lineas():
             desc       = str(ruta.get("Descripcion", "")).strip()
             dist_ruta  = float(ruta.get("Distancia", 0) or 0)
             total_dist += dist_ruta
+            sentido    = "ida" if "Salida" in desc else "vuelta"
 
             # Puntos de la ruta en orden
             puntos_ruta = (
@@ -494,6 +495,7 @@ async def get_all_lineas():
             sub_rutas.append({
                 "id_linea_ruta": id_lr,
                 "descripcion":   desc,
+                "sentido":       sentido,
                 "distancia_km":  dist_ruta,
                 "coordenadas":   coords,
             })
