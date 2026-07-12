@@ -4,11 +4,10 @@ import pandas as pd
 import networkx as nx
 import math
 import os
-from typing import List, Optional
 
 router = APIRouter()
 
-# Variables globales
+# ── Globales ─────────────────────────────────────────────────────────────────
 G = None
 puntos_df = None
 puntos_indexed = None
@@ -18,11 +17,11 @@ lineas_puntos_df = None
 trasbordos_df = None
 ruta_to_linea = {}
 
-# Constantes
-BUS_SPEED_KM_H = 40.0       # Velocidad promedio del microbús
-BUS_SPEED_M_MIN = BUS_SPEED_KM_H * 1000.0 / 60.0  # ~666.67 m/min
-WALK_SPEED_M_MIN = 80.0     # Velocidad caminando: ~4.8 km/h
-TRANSFER_PENALTY_DEFAULT = 5.0  # minutos
+# ── Constantes físicas ────────────────────────────────────────────────────────
+BUS_SPEED_KMH    = 40.0                          # km/h
+BUS_SPEED_MPM    = BUS_SPEED_KMH * 1000.0 / 60  # m/min ≈ 666.67
+WALK_SPEED_MPM   = 80.0                          # m/min ≈ 4.8 km/h
+TRANSFER_PENALTY = 8.0                           # minutos penalización trasbordo
 
 
 class RouteRequest(BaseModel):
@@ -32,470 +31,479 @@ class RouteRequest(BaseModel):
     destino_lng: float
 
 
-def haversine_meters(lat1, lng1, lat2, lng2):
-    """Distancia Haversine en metros entre dos puntos geográficos."""
-    R = 6371000  # radio de la Tierra en metros
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lng2 - lng1)
-    a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam/2)**2
+# ── Utilidades geográficas ───────────────────────────────────────────────────
+
+def haversine_m(lat1, lng1, lat2, lng2) -> float:
+    """Distancia Haversine en metros."""
+    R = 6371000.0
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    Δφ = math.radians(lat2 - lat1)
+    Δλ = math.radians(lng2 - lng1)
+    a = math.sin(Δφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(Δλ / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def dist_to_time(dist_m: float) -> float:
+    """Metros → minutos a la velocidad del microbús."""
+    return dist_m / BUS_SPEED_MPM
+
+
+def walk_time(dist_m: float) -> float:
+    """Metros → minutos caminando."""
+    return dist_m / WALK_SPEED_MPM
+
+
+# ── Construcción del grafo ────────────────────────────────────────────────────
+
 def init_graph():
-    global G, puntos_df, puntos_indexed, lineas_df, linea_ruta_df, lineas_puntos_df, trasbordos_df, ruta_to_linea
+    global G, puntos_df, puntos_indexed, lineas_df, linea_ruta_df
+    global lineas_puntos_df, trasbordos_df, ruta_to_linea
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_dir = os.path.join(base_dir, "data")
 
     try:
-        puntos_df = pd.read_excel(os.path.join(data_dir, "puntos.xlsx"))
-        lineas_df = pd.read_excel(os.path.join(data_dir, "DatosLineas.xls"))
+        puntos_df       = pd.read_excel(os.path.join(data_dir, "puntos.xlsx"))
+        lineas_df       = pd.read_excel(os.path.join(data_dir, "DatosLineas.xls"))
         lineas_puntos_df = pd.read_excel(os.path.join(data_dir, "LineasPuntos.xlsx"))
-        linea_ruta_df = pd.read_excel(os.path.join(data_dir, "LineaRuta.xlsx"))
-        trasbordos_df = pd.read_excel(os.path.join(data_dir, "PuntosTrasbordos.xlsx"))
+        linea_ruta_df   = pd.read_excel(os.path.join(data_dir, "LineaRuta.xlsx"))
+        trasbordos_df   = pd.read_excel(os.path.join(data_dir, "PuntosTrasbordos.xlsx"))
 
-        # Indexar puntos
-        puntos_indexed = puntos_df.set_index('IdPunto')
+        puntos_indexed = puntos_df.set_index("IdPunto")
 
-        # Mapeo de IdLineaRuta -> info de la línea
+        # Mapeo IdLineaRuta → metadatos de la línea
         ruta_to_linea = {}
         for _, row in linea_ruta_df.iterrows():
-            id_linea = int(row['IdLinea'])
-            linea_match = lineas_df[lineas_df['IdLinea'] == id_linea]
-            if linea_match.empty:
+            id_linea = int(row["IdLinea"])
+            match = lineas_df[lineas_df["IdLinea"] == id_linea]
+            if match.empty:
                 continue
-            linea_info = linea_match.iloc[0]
-            ruta_to_linea[int(row['IdLineaRuta'])] = {
-                'id_linea': id_linea,
-                'id_linea_ruta': int(row['IdLineaRuta']),
-                'nombre': str(linea_info['NombreLinea']).strip(),
-                'color': str(linea_info['ColorLinea']).strip(),
-                'descripcion': str(row.get('Descripcion', '')).strip(),
+            info = match.iloc[0]
+            ruta_to_linea[int(row["IdLineaRuta"])] = {
+                "id_linea":      id_linea,
+                "id_linea_ruta": int(row["IdLineaRuta"]),
+                "nombre":        str(info["NombreLinea"]).strip(),
+                "color":         str(info["ColorLinea"]).strip(),
+                "descripcion":   str(row.get("Descripcion", "")).strip(),
             }
 
-        # Mapeo de IdLinea -> lista de IdLineaRuta
-        linea_to_rutas = {}
-        for id_lr, info in ruta_to_linea.items():
-            lid = info['id_linea']
-            if lid not in linea_to_rutas:
-                linea_to_rutas[lid] = []
-            linea_to_rutas[lid].append(id_lr)
-
-        # GRAFO EXPANDIDO: Nodos = (IdPunto, IdLineaRuta)
+        # Grafo expandido: nodo = (IdPunto, IdLineaRuta)
         G = nx.DiGraph()
 
-        # 1. Aristas de viaje
+        # ── 1. Aristas de viaje (dentro de cada ruta) ──────────────────────
         for _, row in lineas_puntos_df.iterrows():
-            u_id = int(row['IdPunto'])
-            v_id = int(row['IdPuntoDest'])
-            if pd.isna(v_id) or v_id == 0:
+            u_id = int(row["IdPunto"])
+            v_id_raw = row["IdPuntoDest"]
+            if pd.isna(v_id_raw):
+                continue
+            v_id = int(v_id_raw)
+            if v_id == 0:
                 continue
 
-            id_lr = int(row['IdLineaRuta'])
-            linea_data = ruta_to_linea.get(id_lr)
-            if linea_data is None:
+            id_lr = int(row["IdLineaRuta"])
+            linea = ruta_to_linea.get(id_lr)
+            if linea is None:
                 continue
-
             if u_id not in puntos_indexed.index or v_id not in puntos_indexed.index:
                 continue
+
+            lat_u = float(puntos_indexed.loc[u_id, "Latitud"])
+            lng_u = float(puntos_indexed.loc[u_id, "Longitud"])
+            lat_v = float(puntos_indexed.loc[v_id, "Latitud"])
+            lng_v = float(puntos_indexed.loc[v_id, "Longitud"])
 
             node_u = (u_id, id_lr)
             node_v = (v_id, id_lr)
 
-            lat_u = float(puntos_indexed.loc[u_id]['Latitud'])
-            lng_u = float(puntos_indexed.loc[u_id]['Longitud'])
-            lat_v = float(puntos_indexed.loc[v_id]['Latitud'])
-            lng_v = float(puntos_indexed.loc[v_id]['Longitud'])
-
             if node_u not in G:
-                G.add_node(node_u, lat=lat_u, lng=lng_u, id_punto=u_id, linea=linea_data)
+                G.add_node(node_u, lat=lat_u, lng=lng_u, id_punto=u_id, linea=linea)
             if node_v not in G:
-                G.add_node(node_v, lat=lat_v, lng=lng_v, id_punto=v_id, linea=linea_data)
+                G.add_node(node_v, lat=lat_v, lng=lng_v, id_punto=v_id, linea=linea)
 
-            dist_m = haversine_meters(lat_u, lng_u, lat_v, lng_v)
-            time_min = dist_m / BUS_SPEED_M_MIN  # tiempo en minutos a 40 km/h
+            # Distancia es la variable independiente; tiempo depende de ella
+            dist_m   = haversine_m(lat_u, lng_u, lat_v, lng_v)
+            time_min = dist_to_time(dist_m)
 
-            G.add_edge(node_u, node_v, weight=time_min, dist_m=dist_m, tipo='viaje', linea=linea_data)
+            G.add_edge(node_u, node_v,
+                       weight=time_min,
+                       dist_m=dist_m,
+                       tipo="viaje",
+                       linea=linea)
 
-        # 2. Aristas de transbordo SOLO donde el Excel lo define
-        # Primero construir set de pares (IdPunto, IdLinea) -> lista de IdLineaRuta
-        punto_linea_rutas = {}
+        # ── 2. Aristas de trasbordo (solo las del Excel) ────────────────────
+        # Índice: (IdPunto, IdLinea) → lista de IdLineaRuta presentes en ese punto
+        punto_linea_map: dict[tuple, list] = {}
         for node in G.nodes():
             id_punto, id_lr = node
-            id_linea = ruta_to_linea[id_lr]['id_linea']
+            id_linea = ruta_to_linea[id_lr]["id_linea"]
             key = (id_punto, id_linea)
-            if key not in punto_linea_rutas:
-                punto_linea_rutas[key] = []
-            punto_linea_rutas[key].append(id_lr)
+            punto_linea_map.setdefault(key, []).append(id_lr)
 
-        # Añadir transbordos de ida/vuelta de la MISMA línea (penalización baja: 0.5 min)
-        puntos_fisicos = {}
-        for node in G.nodes():
-            id_punto, id_lr = node
-            if id_punto not in puntos_fisicos:
-                puntos_fisicos[id_punto] = []
-            puntos_fisicos[id_punto].append(id_lr)
-
-        for id_punto, lr_list in puntos_fisicos.items():
-            for lr1 in lr_list:
-                for lr2 in lr_list:
-                    if lr1 != lr2 and ruta_to_linea[lr1]['id_linea'] == ruta_to_linea[lr2]['id_linea']:
-                        G.add_edge((id_punto, lr1), (id_punto, lr2),
-                                   weight=0.5, dist_m=0, tipo='cambio_sentido')
-
-        # Añadir transbordos reales del Excel PuntosTrasbordos
         trasbordo_count = 0
         for _, row in trasbordos_df.iterrows():
-            id_punto = int(row['IdPunto'])
-            id_linea_orig = int(row['IdLineaOrigen'])
-            id_linea_dest = int(row['IdLineaDestino'])
-            penalty = float(row.get('PenalizacionMin', TRANSFER_PENALTY_DEFAULT))
+            id_punto    = int(row["IdPunto"])
+            linea_orig  = int(row["IdLineaOrigen"])
+            linea_dest  = int(row["IdLineaDestino"])
+            penalty     = float(row.get("PenalizacionMin", TRANSFER_PENALTY))
 
-            # Encontrar los IdLineaRuta que corresponden a cada IdLinea en ese punto
-            lrs_orig = punto_linea_rutas.get((id_punto, id_linea_orig), [])
-            lrs_dest = punto_linea_rutas.get((id_punto, id_linea_dest), [])
+            lrs_orig = punto_linea_map.get((id_punto, linea_orig), [])
+            lrs_dest = punto_linea_map.get((id_punto, linea_dest), [])
 
             for lr_o in lrs_orig:
                 for lr_d in lrs_dest:
-                    if lr_o != lr_d:
-                        if not G.has_edge((id_punto, lr_o), (id_punto, lr_d)):
-                            G.add_edge((id_punto, lr_o), (id_punto, lr_d),
-                                       weight=penalty, dist_m=0, tipo='transbordo')
-                            trasbordo_count += 1
+                    if not G.has_edge((id_punto, lr_o), (id_punto, lr_d)):
+                        G.add_edge((id_punto, lr_o), (id_punto, lr_d),
+                                   weight=penalty, dist_m=0.0, tipo="transbordo")
+                        trasbordo_count += 1
 
-        print(f"Grafo: {G.number_of_nodes()} nodos, {G.number_of_edges()} aristas, {trasbordo_count} transbordos del Excel.")
-    except Exception as e:
+        print(f"Grafo listo: {G.number_of_nodes()} nodos, "
+              f"{G.number_of_edges()} aristas, "
+              f"{trasbordo_count} transbordos.")
+    except Exception as exc:
         import traceback
         traceback.print_exc()
-        print(f"Error al inicializar: {e}")
+        print(f"Error en init_graph: {exc}")
 
 
-def get_nearest_physical_point(lat, lng):
-    """Encuentra el IdPunto más cercano a unas coordenadas."""
-    min_dist = float('inf')
-    nearest = None
+# ── Búsqueda de punto más cercano ─────────────────────────────────────────────
+
+def nearest_point(lat: float, lng: float):
+    """Devuelve (IdPunto, dist_metros) del punto geográfico más cercano."""
+    best_id, best_d = None, float("inf")
     for idx, row in puntos_indexed.iterrows():
-        dist = haversine_meters(lat, lng, row['Latitud'], row['Longitud'])
-        if dist < min_dist:
-            min_dist = dist
-            nearest = idx
-    return nearest, min_dist
+        d = haversine_m(lat, lng, float(row["Latitud"]), float(row["Longitud"]))
+        if d < best_d:
+            best_d, best_id = d, idx
+    return best_id, best_d
 
 
-def build_route_response(path_nodes, user_origin_lat, user_origin_lng, user_dest_lat, user_dest_lng):
-    """Construye respuesta con datos de distancia, tiempo, instrucciones, segmentos."""
-    instrucciones = []
-    segmentos = []
+# ── Construcción de la respuesta de ruta ─────────────────────────────────────
 
-    total_dist_m = 0.0
-    total_time_min = 0.0
-    lineas_usadas = []
-
-    current_segment_coords = []
-    current_linea = None
+def build_route(path_nodes: list,
+                orig_lat: float, orig_lng: float,
+                dest_lat: float, dest_lng: float) -> dict:
+    """
+    Recibe la lista de nodos (IdPunto, IdLineaRuta) del camino real
+    (ya sin super-nodos) y devuelve el dict completo de la ruta.
+    """
+    instrucciones   = []
+    segmentos       = []
+    total_dist_m    = 0.0   # variable independiente: distancia geográfica en bus
+    total_time_bus  = 0.0   # tiempo en bus = f(distancia)
+    lineas_usadas   = []
+    cur_linea       = None
+    cur_seg_coords  = []
 
     for i in range(len(path_nodes) - 1):
         u = path_nodes[i]
         v = path_nodes[i + 1]
         edge = G[u][v]
-        total_time_min += edge['weight']
-        total_dist_m += edge.get('dist_m', 0)
+        tipo = edge["tipo"]
 
-        tipo = edge['tipo']
-        if tipo == 'viaje':
-            linea = edge['linea']
-            if current_linea is None or current_linea['id_linea_ruta'] != linea['id_linea_ruta']:
-                # Si cambiamos de línea (no de tipo transbordo sino por cambio de viaje)
-                if current_linea is not None and current_linea['id_linea'] != linea['id_linea']:
-                    # Fue un transbordo implícito
-                    if current_segment_coords:
-                        segmentos.append({
-                            "linea": current_linea['nombre'],
-                            "color": current_linea['color'],
-                            "coordenadas": list(current_segment_coords)
-                        })
-                    instrucciones.append({
-                        "tipo": "trasbordo",
-                        "mensaje": f"Transbordo: Baja y toma {linea['nombre']}",
-                        "lat": G.nodes[u]['lat'],
-                        "lng": G.nodes[u]['lng']
-                    })
-                    current_segment_coords = [{"lat": G.nodes[u]['lat'], "lng": G.nodes[u]['lng']}]
-                    lineas_usadas.append(linea['nombre'])
-                elif current_linea is None:
-                    instrucciones.append({
-                        "tipo": "subir",
-                        "mensaje": f"Sube a la línea {linea['nombre']}",
-                        "lat": G.nodes[u]['lat'],
-                        "lng": G.nodes[u]['lng']
-                    })
-                    current_segment_coords.append({"lat": G.nodes[u]['lat'], "lng": G.nodes[u]['lng']})
-                    lineas_usadas.append(linea['nombre'])
+        if tipo == "viaje":
+            dist_m   = edge["dist_m"]          # distancia real Haversine
+            time_min = edge["weight"]           # = dist_m / BUS_SPEED_MPM
+            total_dist_m   += dist_m
+            total_time_bus += time_min
 
-                current_linea = linea
+            linea = edge["linea"]
 
-            current_segment_coords.append({"lat": G.nodes[v]['lat'], "lng": G.nodes[v]['lng']})
-
-        elif tipo == 'transbordo':
-            # Terminar segmento actual
-            if current_segment_coords and current_linea:
-                segmentos.append({
-                    "linea": current_linea['nombre'],
-                    "color": current_linea['color'],
-                    "coordenadas": list(current_segment_coords)
+            # ¿Comenzamos un nuevo segmento de línea?
+            if cur_linea is None:
+                # Primer boarding
+                instrucciones.append({
+                    "tipo":    "subir",
+                    "mensaje": f"Sube a la línea {linea['nombre']}",
+                    "lat": G.nodes[u]["lat"],
+                    "lng": G.nodes[u]["lng"],
                 })
+                cur_seg_coords = [
+                    {"lat": G.nodes[u]["lat"], "lng": G.nodes[u]["lng"]},
+                    {"lat": G.nodes[v]["lat"], "lng": G.nodes[v]["lng"]},
+                ]
+                lineas_usadas.append(linea["nombre"])
+                cur_linea = linea
 
-            nueva_linea = G.nodes[v]['linea']
+            elif cur_linea["id_linea_ruta"] == linea["id_linea_ruta"]:
+                # Misma ruta, seguimos acumulando
+                cur_seg_coords.append({"lat": G.nodes[v]["lat"], "lng": G.nodes[v]["lng"]})
+
+            else:
+                # Cambio implícito de ruta (no debería ocurrir sin edge de transbordo,
+                # pero lo manejamos por seguridad)
+                segmentos.append({
+                    "linea": cur_linea["nombre"],
+                    "color": cur_linea["color"],
+                    "coordenadas": list(cur_seg_coords),
+                })
+                instrucciones.append({
+                    "tipo":    "trasbordo",
+                    "mensaje": f"Transbordo: Baja y toma {linea['nombre']}",
+                    "lat": G.nodes[u]["lat"],
+                    "lng": G.nodes[u]["lng"],
+                })
+                lineas_usadas.append(linea["nombre"])
+                cur_linea = linea
+                cur_seg_coords = [
+                    {"lat": G.nodes[u]["lat"], "lng": G.nodes[u]["lng"]},
+                    {"lat": G.nodes[v]["lat"], "lng": G.nodes[v]["lng"]},
+                ]
+
+        elif tipo == "transbordo":
+            # Cerrar segmento anterior
+            if cur_seg_coords and cur_linea:
+                segmentos.append({
+                    "linea": cur_linea["nombre"],
+                    "color": cur_linea["color"],
+                    "coordenadas": list(cur_seg_coords),
+                })
+                cur_seg_coords = []
+
+            nueva = G.nodes[v]["linea"]
             instrucciones.append({
-                "tipo": "trasbordo",
-                "mensaje": f"Transbordo: Baja y toma {nueva_linea['nombre']}",
-                "lat": G.nodes[u]['lat'],
-                "lng": G.nodes[u]['lng']
+                "tipo":    "trasbordo",
+                "mensaje": f"Transbordo: Baja y toma {nueva['nombre']}",
+                "lat": G.nodes[u]["lat"],
+                "lng": G.nodes[u]["lng"],
             })
+            lineas_usadas.append(nueva["nombre"])
+            cur_linea = nueva
+            cur_seg_coords = [{"lat": G.nodes[v]["lat"], "lng": G.nodes[v]["lng"]}]
+            # El tiempo de espera/penalización ya está en edge['weight']
+            # No suma dist_m (es 0 en transbordo)
 
-            current_linea = nueva_linea
-            lineas_usadas.append(nueva_linea['nombre'])
-            current_segment_coords = [{"lat": G.nodes[v]['lat'], "lng": G.nodes[v]['lng']}]
-
-        elif tipo == 'cambio_sentido':
-            # No es un transbordo visible al usuario, es ida->vuelta de la misma línea
-            if current_segment_coords and current_linea:
-                segmentos.append({
-                    "linea": current_linea['nombre'],
-                    "color": current_linea['color'],
-                    "coordenadas": list(current_segment_coords)
-                })
-            current_linea = G.nodes[v]['linea']
-            current_segment_coords = [{"lat": G.nodes[v]['lat'], "lng": G.nodes[v]['lng']}]
-
-    # Último segmento
-    if current_segment_coords and current_linea:
+    # Cerrar último segmento
+    if cur_seg_coords and cur_linea:
         segmentos.append({
-            "linea": current_linea['nombre'],
-            "color": current_linea['color'],
-            "coordenadas": list(current_segment_coords)
+            "linea": cur_linea["nombre"],
+            "color": cur_linea["color"],
+            "coordenadas": list(cur_seg_coords),
         })
 
     # Instrucción de bajada
-    last_node = path_nodes[-1]
+    last = path_nodes[-1]
     instrucciones.append({
-        "tipo": "bajar",
+        "tipo":    "bajar",
         "mensaje": "Baja del micro aquí",
-        "lat": G.nodes[last_node]['lat'],
-        "lng": G.nodes[last_node]['lng']
+        "lat": G.nodes[last]["lat"],
+        "lng": G.nodes[last]["lng"],
     })
 
-    # Limpiar líneas contiguas repetidas
-    cleaned_lineas = []
+    # Deduplicar líneas consecutivas iguales
+    cleaned = []
     for l in lineas_usadas:
-        if not cleaned_lineas or cleaned_lineas[-1] != l:
-            cleaned_lineas.append(l)
+        if not cleaned or cleaned[-1] != l:
+            cleaned.append(l)
 
-    # Calcular distancias de caminata
-    first_bus_node = path_nodes[0]
-    last_bus_node = path_nodes[-1]
-    dist_walk_to_bus = haversine_meters(
-        user_origin_lat, user_origin_lng,
-        G.nodes[first_bus_node]['lat'], G.nodes[first_bus_node]['lng']
-    )
-    dist_walk_from_bus = haversine_meters(
-        G.nodes[last_bus_node]['lat'], G.nodes[last_bus_node]['lng'],
-        user_dest_lat, user_dest_lng
-    )
-    time_walk_to = dist_walk_to_bus / WALK_SPEED_M_MIN
-    time_walk_from = dist_walk_from_bus / WALK_SPEED_M_MIN
+    # ── Distancias de caminata (usuario → primer parada / última parada → destino) ──
+    first = path_nodes[0]
+    dist_walk_orig = haversine_m(orig_lat, orig_lng,
+                                 G.nodes[first]["lat"], G.nodes[first]["lng"])
+    dist_walk_dest = haversine_m(G.nodes[last]["lat"], G.nodes[last]["lng"],
+                                 dest_lat, dest_lng)
 
-    total_dist_km = total_dist_m / 1000.0
+    time_walk_orig = walk_time(dist_walk_orig)
+    time_walk_dest = walk_time(dist_walk_dest)
+
+    tiempo_total = round(total_time_bus + time_walk_orig + time_walk_dest, 1)
+    dist_total_km = round(total_dist_m / 1000.0, 2)
 
     return {
-        "lineas_usadas": cleaned_lineas,
-        "tiempo_estimado_min": round(total_time_min + time_walk_to + time_walk_from, 1),
-        "tiempo_en_bus_min": round(total_time_min, 1),
-        "distancia_total_km": round(total_dist_km, 2),
-        "distancia_caminata_origen_m": round(dist_walk_to_bus),
-        "distancia_caminata_destino_m": round(dist_walk_from_bus),
-        "num_transbordos": max(len(cleaned_lineas) - 1, 0),
-        "instrucciones": instrucciones,
-        "segmentos": segmentos,
+        "lineas_usadas":               cleaned,
+        "num_transbordos":             max(len(cleaned) - 1, 0),
+        "distancia_total_km":          dist_total_km,
+        "tiempo_estimado_min":         tiempo_total,
+        "tiempo_en_bus_min":           round(total_time_bus, 1),
+        "distancia_caminata_origen_m": round(dist_walk_orig),
+        "distancia_caminata_destino_m": round(dist_walk_dest),
+        "instrucciones":               instrucciones,
+        "segmentos":                   segmentos,
     }
 
+
+# ── Endpoint: calcular ruta ───────────────────────────────────────────────────
 
 @router.post("/calculate")
 async def calculate_route(req: RouteRequest):
     if G is None:
         init_graph()
-
     if G is None:
-        raise HTTPException(status_code=500, detail="El sistema de rutas no está inicializado.")
+        raise HTTPException(500, "El sistema de rutas no está inicializado.")
 
-    origen_punto_id, dist_to_orig = get_nearest_physical_point(req.origen_lat, req.origen_lng)
-    destino_punto_id, dist_to_dest = get_nearest_physical_point(req.destino_lat, req.destino_lng)
+    orig_id, _ = nearest_point(req.origen_lat, req.origen_lng)
+    dest_id, _ = nearest_point(req.destino_lat, req.destino_lng)
 
-    if origen_punto_id is None or destino_punto_id is None:
-        raise HTTPException(status_code=404, detail="No se encontraron puntos cercanos.")
+    if orig_id is None or dest_id is None:
+        raise HTTPException(404, "No se encontraron puntos cercanos.")
+    if orig_id == dest_id:
+        raise HTTPException(400, "El origen y el destino son el mismo punto.")
 
-    if origen_punto_id == destino_punto_id:
-        raise HTTPException(status_code=400, detail="El origen y destino son el mismo punto.")
+    nodos_orig = [n for n in G.nodes() if n[0] == orig_id]
+    nodos_dest = [n for n in G.nodes() if n[0] == dest_id]
+
+    if not nodos_orig or not nodos_dest:
+        raise HTTPException(404, "No hay líneas en el origen o destino indicados.")
+
+    # Super-nodos temporales
+    S = ("__ORIG__", -1)
+    T = ("__DEST__", -1)
+    dummy_linea = {"id_linea": -1, "id_linea_ruta": -1,
+                   "nombre": "", "color": "", "descripcion": ""}
+
+    G.add_node(S, lat=req.origen_lat, lng=req.origen_lng,
+               id_punto=-1, linea=dummy_linea)
+    G.add_node(T, lat=req.destino_lat, lng=req.destino_lng,
+               id_punto=-2, linea=dummy_linea)
+
+    for no in nodos_orig:
+        G.add_edge(S, no, weight=0.001, dist_m=0.0, tipo="viaje",
+                   linea=G.nodes[no]["linea"])
+    for nd in nodos_dest:
+        G.add_edge(nd, T, weight=0.001, dist_m=0.0, tipo="viaje",
+                   linea=G.nodes[nd]["linea"])
 
     try:
-        nodos_origen = [n for n in G.nodes() if n[0] == origen_punto_id]
-        nodos_destino = [n for n in G.nodes() if n[0] == destino_punto_id]
-
-        if not nodos_origen or not nodos_destino:
-            raise HTTPException(status_code=404, detail="No hay líneas que pasen cerca del origen o destino.")
-
-        # Supernodos temporales
-        super_origen = ('SUPER_ORIGEN', 0)
-        super_destino = ('SUPER_DESTINO', 0)
-        G.add_node(super_origen, lat=req.origen_lat, lng=req.origen_lng, id_punto=-1, linea={'id_linea': 0, 'nombre': '', 'color': '', 'id_linea_ruta': 0, 'descripcion': ''})
-        G.add_node(super_destino, lat=req.destino_lat, lng=req.destino_lng, id_punto=-2, linea={'id_linea': 0, 'nombre': '', 'color': '', 'id_linea_ruta': 0, 'descripcion': ''})
-
-        for no in nodos_origen:
-            G.add_edge(super_origen, no, weight=0.01, dist_m=0, tipo='viaje', linea=G.nodes[no]['linea'])
-        for nd in nodos_destino:
-            G.add_edge(nd, super_destino, weight=0.01, dist_m=0, tipo='viaje', linea=G.nodes[nd]['linea'])
-
-        all_routes = []
-        seen_combos = set()
-        direct_routes = []
-        transfer_routes = []
+        direct_routes    = []
+        transfer_routes  = []
+        seen_combos      = set()
 
         try:
-            paths_gen = nx.shortest_simple_paths(G, source=super_origen, target=super_destino, weight='weight')
-            count = 0
+            paths_gen = nx.shortest_simple_paths(G, S, T, weight="weight")
+            evaluated = 0
             for path in paths_gen:
-                if count >= 50:
+                evaluated += 1
+                if evaluated > 60:
                     break
 
-                real_path = path[1:-1]
+                real_path = path[1:-1]   # quitar super-nodos
                 if len(real_path) < 2:
-                    count += 1
                     continue
 
-                route_data = build_route_response(real_path, req.origen_lat, req.origen_lng, req.destino_lat, req.destino_lng)
-
-                if route_data['num_transbordos'] > 3:
-                    count += 1
+                try:
+                    rdata = build_route(real_path,
+                                        req.origen_lat, req.origen_lng,
+                                        req.destino_lat, req.destino_lng)
+                except Exception:
                     continue
 
-                combo_key = tuple(route_data['lineas_usadas'])
-                if combo_key not in seen_combos:
-                    seen_combos.add(combo_key)
-                    if route_data['num_transbordos'] == 0:
-                        direct_routes.append(route_data)
-                    else:
-                        transfer_routes.append(route_data)
+                # No más de 2 transbordos para ciudad pequeña
+                if rdata["num_transbordos"] > 2:
+                    continue
 
-                if len(direct_routes) + len(transfer_routes) >= 8:
+                combo = tuple(rdata["lineas_usadas"])
+                if combo in seen_combos:
+                    continue
+                seen_combos.add(combo)
+
+                if rdata["num_transbordos"] == 0:
+                    direct_routes.append(rdata)
+                else:
+                    transfer_routes.append(rdata)
+
+                if len(direct_routes) >= 3 and len(transfer_routes) >= 3:
                     break
-                count += 1
+                if len(direct_routes) + len(transfer_routes) >= 6:
+                    break
+
         except nx.NetworkXNoPath:
             pass
 
-        # Limpiar supernodos
-        G.remove_node(super_origen)
-        G.remove_node(super_destino)
+        # Ordenar cada grupo por tiempo
+        direct_routes.sort(key=lambda r: r["tiempo_estimado_min"])
+        transfer_routes.sort(key=lambda r: r["tiempo_estimado_min"])
 
-        if not direct_routes and not transfer_routes:
-            raise HTTPException(status_code=404, detail="No se encontró una ruta posible entre estos puntos.")
+        # Ruta óptima: directa si existe, si no, la de menor tiempo con trasbordo
+        all_routes = direct_routes + transfer_routes
+        if not all_routes:
+            raise HTTPException(404, "No se encontró una ruta posible entre estos puntos.")
 
-        # PRIORIZACIÓN: Rutas directas primero, luego con trasbordo, ordenadas por tiempo
-        direct_routes.sort(key=lambda x: x['tiempo_estimado_min'])
-        transfer_routes.sort(key=lambda x: x['tiempo_estimado_min'])
+        ruta_optima      = all_routes[0]
+        rutas_alternativas = all_routes[1:6]
 
-        # La ruta óptima es la directa más rápida si existe, sino la con trasbordo más rápida
-        if direct_routes:
-            ruta_optima = direct_routes[0]
-            rutas_alternativas = direct_routes[1:] + transfer_routes
-        else:
-            ruta_optima = transfer_routes[0]
-            rutas_alternativas = transfer_routes[1:]
+    finally:
+        # Siempre limpiar super-nodos aunque haya excepción
+        if S in G:
+            G.remove_node(S)
+        if T in G:
+            G.remove_node(T)
 
-        # Limitar alternativas
-        rutas_alternativas = rutas_alternativas[:5]
+    orig_row = puntos_indexed.loc[orig_id]
+    dest_row = puntos_indexed.loc[dest_id]
 
-        return {
-            "status": "success",
-            "origen_encontrado": {
-                "lat": float(puntos_indexed.loc[origen_punto_id]['Latitud']),
-                "lng": float(puntos_indexed.loc[origen_punto_id]['Longitud'])
-            },
-            "destino_encontrado": {
-                "lat": float(puntos_indexed.loc[destino_punto_id]['Latitud']),
-                "lng": float(puntos_indexed.loc[destino_punto_id]['Longitud'])
-            },
-            "ruta_optima": ruta_optima,
-            "rutas_alternativas": rutas_alternativas,
-            "total_rutas": 1 + len(rutas_alternativas)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    return {
+        "status":             "success",
+        "origen_encontrado":  {"lat": float(orig_row["Latitud"]), "lng": float(orig_row["Longitud"])},
+        "destino_encontrado": {"lat": float(dest_row["Latitud"]), "lng": float(dest_row["Longitud"])},
+        "ruta_optima":        ruta_optima,
+        "rutas_alternativas": rutas_alternativas,
+        "total_rutas":        len(all_routes),
+    }
 
+
+# ── Endpoint: líneas disponibles (Micros Disponibles) ─────────────────────────
 
 @router.get("/lineas")
 async def get_all_lineas():
     if G is None:
         init_graph()
-
-    if lineas_df is None or linea_ruta_df is None:
-        raise HTTPException(status_code=500, detail="Datos no cargados.")
+    if lineas_df is None:
+        raise HTTPException(500, "Datos no cargados.")
 
     result = []
     for _, linea in lineas_df.iterrows():
-        id_linea = int(linea['IdLinea'])
-        nombre = str(linea['NombreLinea']).strip()
-        color = str(linea['ColorLinea']).strip()
+        id_linea = int(linea["IdLinea"])
+        nombre   = str(linea["NombreLinea"]).strip()
+        color    = str(linea["ColorLinea"]).strip()
 
-        rutas_de_linea = linea_ruta_df[linea_ruta_df['IdLinea'] == id_linea]
-
+        rutas_de_linea = linea_ruta_df[linea_ruta_df["IdLinea"] == id_linea]
         sub_rutas = []
-        total_dist_km = 0
+        total_dist = 0.0
 
         for _, ruta in rutas_de_linea.iterrows():
-            id_lr = int(ruta['IdLineaRuta'])
-            desc = str(ruta.get('Descripcion', '')).strip()
-            dist_ruta = float(ruta.get('Distancia', 0))
-            total_dist_km += dist_ruta
+            id_lr      = int(ruta["IdLineaRuta"])
+            desc       = str(ruta.get("Descripcion", "")).strip()
+            dist_ruta  = float(ruta.get("Distancia", 0) or 0)
+            total_dist += dist_ruta
 
-            puntos_ruta = lineas_puntos_df[lineas_puntos_df['IdLineaRuta'] == id_lr].sort_values('Orden')
+            # Puntos de la ruta en orden
+            puntos_ruta = (
+                lineas_puntos_df[lineas_puntos_df["IdLineaRuta"] == id_lr]
+                .sort_values("Orden")
+            )
 
             coords = []
             for _, pr in puntos_ruta.iterrows():
-                pid = int(pr['IdPunto'])
+                pid = int(pr["IdPunto"])
                 if pid in puntos_indexed.index:
                     coords.append({
-                        "lat": float(puntos_indexed.loc[pid]['Latitud']),
-                        "lng": float(puntos_indexed.loc[pid]['Longitud'])
+                        "lat": float(puntos_indexed.loc[pid, "Latitud"]),
+                        "lng": float(puntos_indexed.loc[pid, "Longitud"]),
                     })
 
-            # Añadir destino final
+            # Añadir el último destino si no es 0
             if not puntos_ruta.empty:
-                last_dest = int(puntos_ruta.iloc[-1]['IdPuntoDest'])
-                if last_dest != 0 and last_dest in puntos_indexed.index:
-                    coords.append({
-                        "lat": float(puntos_indexed.loc[last_dest]['Latitud']),
-                        "lng": float(puntos_indexed.loc[last_dest]['Longitud'])
-                    })
+                last_dest_raw = puntos_ruta.iloc[-1]["IdPuntoDest"]
+                if not pd.isna(last_dest_raw):
+                    last_dest = int(last_dest_raw)
+                    if last_dest != 0 and last_dest in puntos_indexed.index:
+                        coords.append({
+                            "lat": float(puntos_indexed.loc[last_dest, "Latitud"]),
+                            "lng": float(puntos_indexed.loc[last_dest, "Longitud"]),
+                        })
 
             sub_rutas.append({
                 "id_linea_ruta": id_lr,
-                "descripcion": desc,
-                "distancia_km": dist_ruta,
-                "coordenadas": coords
+                "descripcion":   desc,
+                "distancia_km":  dist_ruta,
+                "coordenadas":   coords,
             })
 
         result.append({
-            "id_linea": id_linea,
-            "nombre": nombre,
-            "color": color,
-            "distancia_total_km": round(total_dist_km, 2),
-            "rutas": sub_rutas
+            "id_linea":          id_linea,
+            "nombre":            nombre,
+            "color":             color,
+            "distancia_total_km": round(total_dist, 2),
+            "rutas":             sub_rutas,
         })
 
     return {"lineas": result}
