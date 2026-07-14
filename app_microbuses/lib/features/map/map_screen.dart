@@ -46,6 +46,7 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
   int _rutaSeleccionadaIndex = -1; // -1 = óptima
   bool _isRouteNotFound = false; // Flag para mensaje de error específico
   bool _showDashboard = true; // Flag para ocultar/mostrar dashboard de ruta
+  bool _isDirectRoute = false; // Flag para saber si se solicitó ruta directa
 
   // Polylines para dibujar
   List<Polyline> _polylines = [];
@@ -124,6 +125,23 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
       _rutaSeleccionadaIndex = -1;
       _isRouteNotFound = false;
       _showDashboard = true;
+      _isDirectRoute = false;
+      _polylines = [];
+      _markers = [];
+    });
+  }
+
+  void _startSelectOriginDirect() {
+    setState(() {
+      _state = MapState.selectingOrigin;
+      _origen = _mapController.camera.center;
+      _destino = null;
+      _rutaOptima = null;
+      _rutasAlternativas = [];
+      _rutaSeleccionadaIndex = -1;
+      _isRouteNotFound = false;
+      _showDashboard = true;
+      _isDirectRoute = true;
       _polylines = [];
       _markers = [];
     });
@@ -146,10 +164,9 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
   Future<void> _calcularRuta() async {
     if (_origen == null || _destino == null) return;
 
-    final result = await ApiService().calculateRoute(
-      _origen!.latitude, _origen!.longitude,
-      _destino!.latitude, _destino!.longitude,
-    );
+    final result = _isDirectRoute 
+      ? await ApiService().calculateDirectRoute(_origen!.latitude, _origen!.longitude, _destino!.latitude, _destino!.longitude)
+      : await ApiService().calculateRoute(_origen!.latitude, _origen!.longitude, _destino!.latitude, _destino!.longitude);
 
     if (result == null || result['status'] != 'success') {
       setState(() {
@@ -473,6 +490,22 @@ class _MapScreenState extends State<MapScreen> with SingleTickerProviderStateMix
                       onPressed: _startSelectOrigin,
                       icon: const Icon(Icons.route),
                       label: const Text('Calcular Ruta', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade700,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 4,
+                      ),
+                      onPressed: _startSelectOriginDirect,
+                      icon: const Icon(Icons.straight),
+                      label: const Text('Ruta Directa', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                   ),
                   const SizedBox(height: 12),

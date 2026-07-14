@@ -446,6 +446,99 @@ async def calculate_route(req: RouteRequest):
         "total_rutas":        len(all_routes),
     }
 
+# ── Endpoint: calcular ruta directa ──────────────────────────────────────────
+
+@router.post("/calculate_direct")
+async def calculate_direct_route(req: RouteRequest):
+    if G is None:
+        init_graph()
+    if G is None:
+        raise HTTPException(500, "El sistema de rutas no está inicializado.")
+
+    orig_id, _ = nearest_point(req.origen_lat, req.origen_lng)
+    dest_id, _ = nearest_point(req.destino_lat, req.destino_lng)
+
+    if orig_id is None or dest_id is None:
+        raise HTTPException(404, "No se encontraron puntos cercanos.")
+    
+    candidates = []
+
+    for id_lr in ruta_to_linea.keys():
+        pr = lineas_puntos_df[lineas_puntos_df["IdLineaRuta"] == id_lr].sort_values("Orden")
+        
+        pts = []
+        for _, row in pr.iterrows():
+            pid = int(row["IdPunto"])
+            if pid in puntos_indexed.index:
+                pts.append((pid,
+                            float(puntos_indexed.loc[pid, "Latitud"]),
+                            float(puntos_indexed.loc[pid, "Longitud"])))
+        
+        if len(pts) < 2:
+            continue
+
+        best_cost = float('inf')
+        best_o = -1
+        best_d = -1
+        
+        for i in range(len(pts)):
+            d_o = haversine_m(req.origen_lat, req.origen_lng, pts[i][1], pts[i][2])
+            for j in range(i + 1, len(pts)):
+                d_d = haversine_m(req.destino_lat, req.destino_lng, pts[j][1], pts[j][2])
+                cost = d_o + d_d
+                if cost < best_cost:
+                    best_cost = cost
+                    best_o = i
+                    best_d = j
+                    
+        if best_o != -1 and best_d != -1:
+            real_path = [(pts[k][0], id_lr) for k in range(best_o, best_d + 1)]
+            try:
+                rdata = build_route(real_path,
+                                    req.origen_lat, req.origen_lng,
+                                    req.destino_lat, req.destino_lng)
+                
+                # Use walk distances to evaluate "best" since we want to minimize walking
+                total_walk = rdata["distancia_caminata_origen_m"] + rdata["distancia_caminata_destino_m"]
+                candidates.append((total_walk, rdata))
+            except Exception:
+                continue
+
+    if not candidates:
+        raise HTTPException(404, "No se encontró una ruta directa entre estos puntos.")
+
+    # Sort candidates by total walk distance (ascending)
+    candidates.sort(key=lambda x: x[0])
+    
+    all_routes = [c[1] for c in candidates]
+    
+    # Remove duplicates based on lineas_usadas
+    seen_combos = set()
+    unique_routes = []
+    for r in all_routes:
+        combo = tuple(r["lineas_usadas"])
+        if combo not in seen_combos:
+            seen_combos.add(combo)
+            unique_routes.append(r)
+            
+    if not unique_routes:
+        raise HTTPException(404, "No se encontró una ruta directa válida.")
+
+    ruta_optima = unique_routes[0]
+    rutas_alternativas = unique_routes[1:6]
+
+    orig_row = puntos_indexed.loc[orig_id]
+    dest_row = puntos_indexed.loc[dest_id]
+
+    return {
+        "status":             "success",
+        "origen_encontrado":  {"lat": float(orig_row["Latitud"]), "lng": float(orig_row["Longitud"])},
+        "destino_encontrado": {"lat": float(dest_row["Latitud"]), "lng": float(dest_row["Longitud"])},
+        "ruta_optima":        ruta_optima,
+        "rutas_alternativas": rutas_alternativas,
+        "total_rutas":        len(unique_routes),
+    }
+
 
 # ── Endpoint: líneas disponibles (Micros Disponibles) ─────────────────────────
 

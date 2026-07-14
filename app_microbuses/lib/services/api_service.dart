@@ -58,6 +58,29 @@ class ApiService {
     }
   }
 
+  // Algoritmo de ruta directa (sin trasbordos, ir de A hacia B)
+  Future<Map<String, dynamic>?> calculateDirectRoute(double originLat, double originLng, double destLat, double destLng) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/routing/calculate_direct'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'origen_lat': originLat,
+          'origen_lng': originLng,
+          'destino_lat': destLat,
+          'destino_lng': destLng
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print("Error calculating direct route: $e");
+      return null;
+    }
+  }
+
   // Obtener todas las líneas con sus recorridos completos
   Future<List<dynamic>?> getAllLineas() async {
     try {
