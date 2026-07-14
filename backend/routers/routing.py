@@ -62,12 +62,12 @@ def init_graph():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     datos_dir = os.path.join(base_dir, "..", "Documentos", "Datos_Lineas")
     
-    # Archivos individuales actualizados por el usuario
+    # Archivos individuales (respetando el case-sensitive de git/Linux)
     puntos_path = os.path.join(datos_dir, "puntos.xlsx")
     lineas_path = os.path.join(datos_dir, "DatosLineas.xls")  # Contiene la hoja Lineas
-    lineas_puntos_path = os.path.join(datos_dir, "lineasPuntos.xlsx")
-    linea_ruta_path = os.path.join(datos_dir, "lineaRuta.xlsx")
-    trasbordos_path = os.path.join(datos_dir, "Puntostrasbordos.xlsx")
+    lineas_puntos_path = os.path.join(datos_dir, "LineasPuntos.xlsx")
+    linea_ruta_path = os.path.join(datos_dir, "LineaRuta.xlsx")
+    trasbordos_path = os.path.join(datos_dir, "PuntosTrasbordos.xlsx")
 
     try:
         puntos_df       = pd.read_excel(puntos_path)
