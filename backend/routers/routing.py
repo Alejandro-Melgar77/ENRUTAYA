@@ -335,9 +335,14 @@ def build_route(path_nodes: list,
 @router.post("/calculate")
 async def calculate_route(req: RouteRequest):
     if G is None:
-        init_graph()
+        try:
+            init_graph()
+        except Exception as e:
+            import traceback
+            raise HTTPException(500, f"Error inicializando grafo: {e}\n{traceback.format_exc()}")
+            
     if G is None:
-        raise HTTPException(500, "El sistema de rutas no está inicializado.")
+        raise HTTPException(500, "El sistema de rutas no está inicializado (G es None).")
 
     orig_id, _ = nearest_point(req.origen_lat, req.origen_lng)
     dest_id, _ = nearest_point(req.destino_lat, req.destino_lng)
