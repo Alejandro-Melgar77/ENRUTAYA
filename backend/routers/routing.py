@@ -61,6 +61,8 @@ def init_graph():
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     datos_dir = os.path.join(base_dir, "..", "Documentos", "Datos_Lineas")
+    if not os.path.exists(datos_dir) or not os.path.exists(os.path.join(datos_dir, "puntos.xlsx")):
+        datos_dir = os.path.join(base_dir, "data")
     
     # Archivos individuales (respetando el case-sensitive de git/Linux)
     puntos_path = os.path.join(datos_dir, "puntos.xlsx")
@@ -444,52 +446,6 @@ async def calculate_route(req: RouteRequest):
         "ruta_optima":        ruta_optima,
         "rutas_alternativas": rutas_alternativas,
         "total_rutas":        len(all_routes),
-    }
-
-# ── Endpoint: debug ──────────────────────────────────────────────────────────
-
-@router.get("/debug")
-async def debug_system():
-    import os, traceback
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    datos_dir = os.path.join(base_dir, "..", "Documentos", "Datos_Lineas")
-    
-    file_status = {}
-    paths = {
-        "base_dir": base_dir,
-        "datos_dir": datos_dir,
-        "puntos": os.path.join(datos_dir, "puntos.xlsx"),
-        "lineas": os.path.join(datos_dir, "DatosLineas.xls"),
-        "lineas_puntos": os.path.join(datos_dir, "LineasPuntos.xlsx"),
-        "linea_ruta": os.path.join(datos_dir, "LineaRuta.xlsx"),
-        "trasbordos": os.path.join(datos_dir, "PuntosTrasbordos.xlsx")
-    }
-    
-    for name, path in paths.items():
-        if name in ["base_dir", "datos_dir"]:
-            file_status[name] = {
-                "path": path,
-                "exists": os.path.exists(path),
-                "isdir": os.path.isdir(path) if os.path.exists(path) else False,
-                "contents": os.listdir(path) if os.path.exists(path) and os.path.isdir(path) else []
-            }
-        else:
-            file_status[name] = {
-                "path": path,
-                "exists": os.path.exists(path),
-                "size": os.path.getsize(path) if os.path.exists(path) else 0
-            }
-            
-    init_error = None
-    try:
-        init_graph()
-    except Exception as e:
-        init_error = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-
-    return {
-        "file_status": file_status,
-        "init_error": init_error,
-        "graph_nodes": G.number_of_nodes() if G is not None else -1
     }
 
 # ── Endpoint: calcular ruta directa ──────────────────────────────────────────
